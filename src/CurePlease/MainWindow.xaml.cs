@@ -31,8 +31,35 @@ namespace CurePlease
             _engine.RegisterModule(new CureModule(_state));
             _engine.RegisterModule(new CuragaModule(_state));
             _engine.RegisterModule(new DebuffModule(_state));
+            _engine.RegisterModule(new BuffUpkeepModule(_state));
+            BardModule bard = new BardModule(_state);
+            bard.Log += message => Dispatcher.BeginInvoke(new Action(() => AppendLog(message)));
+            _engine.RegisterModule(bard);
+
+            // Load persisted settings before anything reads Current (addon port below).
+            try
+            {
+                if (System.IO.File.Exists(SettingsService.DefaultPath))
+                {
+                    _settings.Load(SettingsService.DefaultPath);
+                    AppendLog("Settings loaded from " + SettingsService.DefaultPath);
+                }
+                else
+                {
+                    // TEMPORARY: seed a default settings file so there is something to edit.
+                    // Later: nothing is preloaded or auto-generated — the user picks and
+                    // loads a settings file explicitly.
+                    _settings.Save(_settings.Current, SettingsService.DefaultPath);
+                    AppendLog("Created default settings at " + SettingsService.DefaultPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendLog("Settings load failed (using defaults): " + ex.Message);
+            }
 
             _addon.CastEvent += kind => _casting.NotifyCastEvent(kind);
+            _addon.SpellLanded += (spellId, recipients) => bard.OnSpellLanded(recipients);
             _addon.Handshake += () => Dispatcher.BeginInvoke(new Action(() => AppendLog("Addon handshake confirmed")));
             _addon.Error += message => Dispatcher.BeginInvoke(new Action(() => AppendLog("Addon listener: " + message)));
             _addon.Start(_settings.Current.Addon.Port);
@@ -67,26 +94,51 @@ namespace CurePlease
             };
             previewTimer.Start();
 
+            RefreshProcessLists();
+
             Closing += OnClosing;
+        }
+
+        /// <summary>
+        /// Repopulates the process combos with running FFXI instances, preserving the
+        /// current selections by PID. Each combo gets its own list copy so their
+        /// selections stay independent.
+        /// </summary>
+        private void RefreshProcessLists()
+        {
+            var processes = GameProcessLocator.FindGameProcesses();
+            int? plPid = (PlPidBox.SelectedItem as GameProcessInfo)?.Pid;
+            int? monitoredPid = (MonitoredPidBox.SelectedItem as GameProcessInfo)?.Pid;
+
+            PlPidBox.ItemsSource = processes.ToList();
+            MonitoredPidBox.ItemsSource = processes.ToList();
+
+            PlPidBox.SelectedItem = processes.FirstOrDefault(p => p.Pid == plPid) ?? processes.FirstOrDefault();
+            MonitoredPidBox.SelectedItem = processes.FirstOrDefault(p => p.Pid == monitoredPid) ?? processes.FirstOrDefault();
+        }
+
+        private void PidCombo_DropDownOpened(object sender, EventArgs e)
+        {
+            RefreshProcessLists();
         }
 
         private void AttachButton_Click(object sender, RoutedEventArgs e)
         {
-            if (!int.TryParse(PlPidBox.Text, out int pid))
+            if (!(PlPidBox.SelectedItem is GameProcessInfo pl))
             {
-                AppendLog("Invalid PL PID");
+                AppendLog("Select the PL character first");
                 return;
             }
 
             try
             {
-                _state.Attach(pid);
-                AppendLog("Attached to PID " + pid);
+                _state.Attach(pl.Pid);
+                AppendLog("Attached to " + pl.DisplayName);
 
-                if (int.TryParse(MonitoredPidBox.Text, out int monitoredPid))
+                if (MonitoredPidBox.SelectedItem is GameProcessInfo monitored)
                 {
-                    _state.AttachMonitored(monitoredPid);
-                    AppendLog("Monitored PID " + monitoredPid);
+                    _state.AttachMonitored(monitored.Pid);
+                    AppendLog("Monitored " + monitored.DisplayName);
                 }
 
                 StartButton.IsEnabled = true;
@@ -119,6 +171,10 @@ namespace CurePlease
                 {
                     AppendLog("  note: " + warning);
                 }
+
+                // Persist immediately — an import that only lives in memory is lost on exit.
+                _settings.Save(_settings.Current, SettingsService.DefaultPath);
+                AppendLog("Saved to " + SettingsService.DefaultPath);
             }
             catch (Exception ex)
             {

@@ -12,10 +12,12 @@
 
         <!-- Attach bar -->
         <StackPanel Orientation="Horizontal" Grid.Row="0" Margin="0,0,0,6">
-            <TextBlock Text="PL PID:" VerticalAlignment="Center"/>
-            <TextBox x:Name="PlPidBox" Width="70" Margin="4,0,12,0"/>
-            <TextBlock Text="Monitored PID:" VerticalAlignment="Center"/>
-            <TextBox x:Name="MonitoredPidBox" Width="70" Margin="4,0,12,0"/>
+            <TextBlock Text="PL:" VerticalAlignment="Center"/>
+            <ComboBox x:Name="PlPidBox" Width="160" Margin="4,0,12,0"
+                      IsSynchronizedWithCurrentItem="False" DropDownOpened="PidCombo_DropDownOpened"/>
+            <TextBlock Text="Monitored:" VerticalAlignment="Center"/>
+            <ComboBox x:Name="MonitoredPidBox" Width="160" Margin="4,0,12,0"
+                      IsSynchronizedWithCurrentItem="False" DropDownOpened="PidCombo_DropDownOpened"/>
             <Button x:Name="AttachButton" Content="Attach" Width="80" Margin="0,0,8,0" Click="AttachButton_Click"/>
             <Button x:Name="StartButton" Content="Start" Width="80" Margin="0,0,8,0" Click="StartButton_Click" IsEnabled="False"/>
             <Button x:Name="ImportButton" Content="Import legacy…" Width="100" Margin="0,0,8,0" Click="ImportButton_Click"/>
