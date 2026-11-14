@@ -19,6 +19,7 @@ namespace CurePlease.Settings
         public CuragaSettings Curaga { get; set; } = new CuragaSettings();
         public PrioritySettings Priorities { get; set; } = new PrioritySettings();
         public BuffSettings Buffs { get; set; } = new BuffSettings();
+        public BardSettings Bard { get; set; } = new BardSettings();
         public DebuffSettings Debuffs { get; set; } = new DebuffSettings();
         public AddonSettings Addon { get; set; } = new AddonSettings();
 
@@ -126,20 +127,152 @@ namespace CurePlease.Settings
         /// <summary>Base score for buff-upkeep actions (kept low: only when idle).</summary>
         public double BuffWeight { get; set; } = 20.0;
 
+        /// <summary>Base score for bard songs (JA prep steps score above this).</summary>
+        public double SongWeight { get; set; } = 25.0;
+
         /// <summary>Names of high-priority party members (replaces per-slot checkboxes).</summary>
         public List<string> HighPriorityMembers { get; set; } = new List<string>();
     }
 
     public sealed class BuffSettings
     {
+        /// <summary>Haste the members listed in <see cref="HasteTargets"/>.</summary>
         public bool AutoHaste { get; set; }
+
+        /// <summary>Spell to use ("Haste" or "Haste II").</summary>
+        public string HasteSpell { get; set; } = "Haste";
+
+        /// <summary>Names to keep Haste on (replaces legacy per-slot checkboxes).</summary>
+        public List<string> HasteTargets { get; set; } = new List<string>();
+
+        /// <summary>Fallback refresh interval when buff presence is unknown (no addon data).</summary>
         public double AutoHasteMinutes { get; set; } = 3;
 
+        /// <summary>Keep Protect on the whole party (cast on each member missing it).</summary>
         public bool AutoProtect { get; set; }
+
+        /// <summary>Spell to use ("Protect" .. "Protect V").</summary>
+        public string ProtectSpell { get; set; } = "Protect V";
+
         public double AutoProtectMinutes { get; set; } = 30;
 
         public bool AutoShell { get; set; }
+
+        /// <summary>Spell to use ("Shell" .. "Shell V").</summary>
+        public string ShellSpell { get; set; } = "Shell V";
+
         public double AutoShellMinutes { get; set; } = 30;
+    }
+
+    /// <summary>One Pianissimo single-target song assignment.</summary>
+    public sealed class PianissimoTarget
+    {
+        public string Song { get; set; } = string.Empty;
+        public string Target { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Bard song engine. Party songs are AoE around the bard and tracked via the bard's
+    /// own buffs (always readable); pianissimo targets need known buffs (self, monitored
+    /// process, or addon party data). See docs/bard-design-notes.md.
+    /// </summary>
+    public sealed class BardSettings
+    {
+        /// <summary>Master switch; the module also requires main or sub job BRD.</summary>
+        public bool Enabled { get; set; }
+
+        /// <summary>Ordered party rotation, sung on self (AoE). Later songs overwrite earlier ones when slots are full.</summary>
+        public List<string> PartySongs { get; set; } = new List<string>();
+
+        /// <summary>
+        /// Low-value songs sung to occupy the instrument-granted slots so the real
+        /// rotation can overwrite them. These must be songs the player's GearSwap lua
+        /// treats as placeholders — equipping the multi-song instrument (Daurdabla)
+        /// and NO duration midcast set for them — otherwise they will not be the
+        /// lowest-duration songs and the overwrite will eat a real song instead.
+        /// (Mote BRD luas do this via named midcast sets for Army's Paeon and
+        /// Army's Paeon II, e.g. set_combine(sets.precast.FC.BardSong, {range=...}).)
+        /// </summary>
+        public List<string> DummySongs { get; set; } = new List<string>();
+
+        /// <summary>
+        /// Dummy-song placement when rebuilding the full song structure after losing it
+        /// (death/zone/full dispel). The end state is identical either way — every party
+        /// song up at full strength — only the path differs:
+        /// "Middle" (default): the first two party songs are sung, then the dummies, then
+        /// the remaining party songs (they overwrite the dummies).
+        /// "First": dummies occupy the instrument-granted slots before any party song.
+        /// Either way, GearSwap must sing dummies WITHOUT the duration midcast set so
+        /// they are always the lowest-duration song and get overwritten — that overwrite
+        /// rule is what makes both placements work.
+        /// </summary>
+        public string DummyPlacement { get; set; } = "Middle";
+
+        /// <summary>Nightingale + Troubadour before a refresh pass ("NiTro").</summary>
+        public bool UseNitro { get; set; }
+
+        /// <summary>
+        /// Use Soul Voice (1 h recast) before a refresh pass when it is off recast, and
+        /// re-sing active songs that were not sung under Soul Voice while it is up.
+        /// Off by default — most players save SV for specific fights.
+        /// </summary>
+        public bool UseSoulVoice { get; set; }
+
+        /// <summary>
+        /// Declared owned instruments (e.g. "Marsyas", "Daurdabla", "Gjallarhorn",
+        /// "Blurred Harp +1", "Terpander", "Loughnashade"). Determines song-slot count
+        /// (2 + best bonus in the list) and Honor March (Marsyas) / Aria of Passion
+        /// (Loughnashade) availability. Cure-Please only sends /ma and /ja commands —
+        /// the player's own GearSwap lua is expected to equip the right instrument per
+        /// song, so this list declares what GearSwap has to work with. Empty = auto-detect:
+        /// equipped Range slot first, then best known instrument from owned items.
+        /// </summary>
+        public List<string> OwnedInstruments { get; set; } = new List<string>();
+
+        /// <summary>
+        /// Legacy v2-alpha name for <see cref="OwnedInstruments"/> — set-only so old
+        /// settings files migrate on load; never serialized back out.
+        /// </summary>
+        public string Instrument
+        {
+            set
+            {
+                if (!string.IsNullOrWhiteSpace(value) && !OwnedInstruments.Contains(value.Trim()))
+                {
+                    OwnedInstruments.Add(value.Trim());
+                }
+            }
+        }
+
+        /// <summary>
+        /// Offensive songs kept on the battle target while engaged (Elegy, Nocturne,
+        /// Threnody, Requiem, Lullaby families). Enemy debuffs cannot be read from memory,
+        /// so these are re-sung on a conservative timer; target switches reset tracking.
+        /// </summary>
+        public List<string> EnemyDebuffSongs { get; set; } = new List<string>();
+
+        public bool UseMarcato { get; set; }
+
+        /// <summary>Song to pair Marcato with (typically Honor March — naturally the longest).</summary>
+        public string MarcatoSong { get; set; } = "Honor March";
+
+        /// <summary>Clarion Call before songs that need the 3rd slot.</summary>
+        public bool UseClarionCall { get; set; }
+
+        /// <summary>Song intended for the Clarion Call slot (sung after dummies, before the rest).</summary>
+        public string ClarionSong { get; set; } = string.Empty;
+
+        /// <summary>Single-target top-ups via Pianissimo (5 s recast), e.g. Ballad on the tank.</summary>
+        public List<PianissimoTarget> PianissimoTargets { get; set; } = new List<PianissimoTarget>();
+
+        /// <summary>Estimated party-song duration before modifiers the bot itself applied (Troubadour doubles).</summary>
+        public double BaseDurationSeconds { get; set; } = 180;
+
+        /// <summary>Re-sing a tracked song when its estimated remaining time drops below this (overwrite-same is always safe).</summary>
+        public double RefreshMarginSeconds { get; set; } = 30;
+
+        /// <summary>AoE song reach with Horn; recipients beyond this are skipped (9.9 per the guide).</summary>
+        public double SongRangeYalms { get; set; } = 9.9;
     }
 
     /// <summary>

@@ -80,10 +80,24 @@ namespace CurePlease.Settings
             // --- General ---
             settings.General.EnableOutOfPartyHealing = GetBool(values, "enableOutOfPartyHealing", ref mapped);
 
-            // --- Buff upkeep intervals ---
+            // --- Buff upkeep intervals and spell tiers ---
             settings.Buffs.AutoHasteMinutes = GetDouble(values, "autoHasteMinutes", ref mapped);
             settings.Buffs.AutoProtectMinutes = GetDouble(values, "autoProtect_Minutes", ref mapped);
             settings.Buffs.AutoShellMinutes = GetDouble(values, "autoShellMinutes", ref mapped);
+
+            string[] protectTiers = { "Protect", "Protect II", "Protect III", "Protect IV", "Protect V" };
+            string[] shellTiers = { "Shell", "Shell II", "Shell III", "Shell IV", "Shell V" };
+            int protectIdx = GetInt(values, "autoProtect_Spell", ref mapped);
+            int shellIdx = GetInt(values, "autoShell_Spell", ref mapped);
+            if (protectIdx >= 0 && protectIdx < protectTiers.Length)
+            {
+                settings.Buffs.ProtectSpell = protectTiers[protectIdx];
+            }
+
+            if (shellIdx >= 0 && shellIdx < shellTiers.Length)
+            {
+                settings.Buffs.ShellSpell = shellTiers[shellIdx];
+            }
 
             // --- Debuff removals: union of the party na* and monitored* checkboxes ---
             Dictionary<string, string> debuffMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -118,6 +132,40 @@ namespace CurePlease.Settings
                 settings.Debuffs.EnabledRemovals = removals.ToList();
             }
 
+            // --- Bard songs (legacy song1-4/dummy1-2 are combo indices into a fixed list) ---
+            string[] songFields = { "song1", "song2", "song3", "song4" };
+            foreach (string field in songFields)
+            {
+                string song = LegacySongName(GetInt(values, field, ref mapped));
+                if (song != null)
+                {
+                    settings.Bard.PartySongs.Add(song);
+                }
+            }
+
+            string[] dummyFields = { "dummy1", "dummy2" };
+            foreach (string field in dummyFields)
+            {
+                string song = LegacySongName(GetInt(values, field, ref mapped));
+                if (song != null)
+                {
+                    settings.Bard.DummySongs.Add(song);
+                }
+            }
+
+            bool troubadour = GetBool(values, "Troubadour", ref mapped);
+            bool nightingale = GetBool(values, "Nightingale", ref mapped);
+            settings.Bard.UseNitro = troubadour || nightingale;
+            settings.Bard.UseMarcato = GetBool(values, "Marcato", ref mapped);
+
+            double recastSongMinutes = GetDouble(values, "recastSongTime", ref mapped);
+            if (recastSongMinutes > 0)
+            {
+                settings.Bard.BaseDurationSeconds = recastSongMinutes * 60;
+            }
+
+            settings.Bard.Enabled = settings.Bard.PartySongs.Count > 0;
+
             // --- Report the rest as ignored ---
             result.MappedCount = mapped;
             result.IgnoredCount = values.Count - mapped;
@@ -137,9 +185,87 @@ namespace CurePlease.Settings
                 result.Warnings.Add("EnableAddOn: addon-based party debuff tracking is not ported yet (P2).");
             }
 
-            result.Warnings.Add("Per-member buff selections (haste/protect/shell per slot), song lists, JA toggles, and item settings are not mapped yet — they arrive with their feature modules.");
+            result.Warnings.Add("Per-member buff selections (haste/protect/shell per slot), JA toggles, and item settings are not mapped yet — they arrive with their feature modules.");
+
+            if (GetBool(values, "Pianissimo", ref mapped))
+            {
+                result.Warnings.Add("Pianissimo: legacy stored no song/target pairs — configure Bard.PianissimoTargets manually.");
+            }
 
             return result;
+        }
+
+        /// <summary>
+        /// Legacy song combo index -> canonical song name. Indices come from the fixed
+        /// Form2 combo list (separators occupy 6/12/19/22/25/40/43/47/51/68/70; 0 = empty).
+        /// Legacy typos/trailing spaces are corrected ("Valor Minuet ", "Godess's Hymnus").
+        /// </summary>
+        private static string LegacySongName(int index)
+        {
+            switch (index)
+            {
+                case 1: return "Knight's Minne";
+                case 2: return "Knight's Minne II";
+                case 3: return "Knight's Minne III";
+                case 4: return "Knight's Minne IV";
+                case 5: return "Knight's Minne V";
+                case 7: return "Valor Minuet";
+                case 8: return "Valor Minuet II";
+                case 9: return "Valor Minuet III";
+                case 10: return "Valor Minuet IV";
+                case 11: return "Valor Minuet V";
+                case 13: return "Army's Paeon";
+                case 14: return "Army's Paeon II";
+                case 15: return "Army's Paeon III";
+                case 16: return "Army's Paeon IV";
+                case 17: return "Army's Paeon V";
+                case 18: return "Army's Paeon VI";
+                case 20: return "Sword Madrigal";
+                case 21: return "Blade Madrigal";
+                case 23: return "Hunter's Prelude";
+                case 24: return "Archer's Prelude";
+                case 26: return "Sinewy Etude";
+                case 27: return "Dextrous Etude";
+                case 28: return "Vivacious Etude";
+                case 29: return "Quick Etude";
+                case 30: return "Learned Etude";
+                case 31: return "Spirited Etude";
+                case 32: return "Enchanting Etude";
+                case 33: return "Herculean Etude";
+                case 34: return "Uncanny Etude";
+                case 35: return "Vital Etude";
+                case 36: return "Swift Etude";
+                case 37: return "Sage Etude";
+                case 38: return "Logical Etude";
+                case 39: return "Bewitching Etude";
+                case 41: return "Sheepfoe Mambo";
+                case 42: return "Dragonfoe Mambo";
+                case 44: return "Mage's Ballad";
+                case 45: return "Mage's Ballad II";
+                case 46: return "Mage's Ballad III";
+                case 48: return "Advancing March";
+                case 49: return "Victory March";
+                case 50: return "Honor March";
+                case 52: return "Fire Carol";
+                case 53: return "Fire Carol II";
+                case 54: return "Ice Carol";
+                case 55: return "Ice Carol II";
+                case 56: return "Wind Carol";
+                case 57: return "Wind Carol II";
+                case 58: return "Earth Carol";
+                case 59: return "Earth Carol II";
+                case 60: return "Lightning Carol";
+                case 61: return "Lightning Carol II";
+                case 62: return "Water Carol";
+                case 63: return "Water Carol II";
+                case 64: return "Light Carol";
+                case 65: return "Light Carol II";
+                case 66: return "Dark Carol";
+                case 67: return "Dark Carol II";
+                case 69: return "Goddess's Hymnus";
+                case 71: return "Sentinel's Scherzo";
+                default: return null;
+            }
         }
 
         private static bool GetBool(Dictionary<string, string> values, string key, ref int mapped)
