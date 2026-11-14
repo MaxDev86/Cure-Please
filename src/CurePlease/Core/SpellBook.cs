@@ -89,7 +89,16 @@ namespace CurePlease.Core
                 return null;
             }
 
-            if (!state.KnowsSpell(spell.ID))
+            // NB: ISpell.Index is the real spell id (known-mask/recast key); ISpell.ID is a
+            // different identifier for songs (e.g. Minuet V: Index 398, ID 763).
+            if (!state.KnowsSpell(spell.Index))
+            {
+                return null;
+            }
+
+            // The known-spell mask is account-wide ("ever learned"); this is the
+            // current-job/level gate that keeps a BRD/NIN from attempting Cure III.
+            if (!state.MeetsSpellLevelRequirement(spell))
             {
                 return null;
             }

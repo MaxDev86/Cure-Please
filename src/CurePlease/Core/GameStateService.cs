@@ -19,7 +19,7 @@ namespace CurePlease.Core
     /// Replaces the legacy pattern of ~143 GetPartyMembers() calls per tick and
     /// unguarded API field access. Also watches for game-process death.
     /// </summary>
-    public sealed class GameStateService
+    public class GameStateService
     {
         private EliteAPI _pl;
         private EliteAPI _monitored;
@@ -69,8 +69,9 @@ namespace CurePlease.Core
         /// Reads the game once and returns an immutable snapshot, or null when the
         /// player is not logged in / the process is gone. Never throws: API access
         /// failures transition the service to <see cref="ConnectionState.Lost"/>.
+        /// Virtual so headless tests can feed the engine synthetic snapshots.
         /// </summary>
-        public GameSnapshot TakeSnapshot()
+        public virtual GameSnapshot TakeSnapshot()
         {
             if (_pl == null)
             {
@@ -144,6 +145,14 @@ namespace CurePlease.Core
                     PartyMembers = members,
                 };
 
+                EliteAPI.TargetInfo target = _pl.Target.GetTargetInfo();
+                if (target != null)
+                {
+                    snapshot.TargetId = target.TargetId;
+                    snapshot.TargetName = target.TargetName ?? string.Empty;
+                    snapshot.TargetHpp = target.TargetHealthPercent;
+                }
+
                 if (_monitored != null && _monitored.Player.LoginStatus == (int)LoginStatus.LoggedIn)
                 {
                     snapshot.MonitoredName = _monitored.Player.Name ?? string.Empty;
@@ -162,7 +171,7 @@ namespace CurePlease.Core
         }
 
         /// <summary>Sends a command line to the game (e.g. /ma, /ja, /item). Returns false when detached.</summary>
-        public bool SendCommand(string command)
+        public virtual bool SendCommand(string command)
         {
             if (_pl == null || State != ConnectionState.Connected)
             {
@@ -173,8 +182,8 @@ namespace CurePlease.Core
             return true;
         }
 
-        /// <summary>Cast bar progress 0..100 for the local player; -1 when unavailable.</summary>
-        public float GetCastBarPercent()
+        /// <summary>Cast bar fill ratio for the local player: 1.0 idle, ramps 0 -&gt; 1 while casting; -1 when unavailable.</summary>
+        public virtual float GetCastBarPercent()
         {
             if (_pl == null)
             {
@@ -192,7 +201,7 @@ namespace CurePlease.Core
         }
 
         /// <summary>Resolves a spell from the resource database; null when unknown. Never throws on bad names.</summary>
-        public EliteAPI.ISpell FindSpell(string name)
+        public virtual EliteAPI.ISpell FindSpell(string name)
         {
             if (_pl == null || string.IsNullOrWhiteSpace(name))
             {
@@ -215,13 +224,43 @@ namespace CurePlease.Core
             }
         }
 
-        public bool KnowsSpell(uint spellId)
+        public virtual bool KnowsSpell(uint spellId)
         {
             return _pl != null && _pl.Player.HasSpell(spellId);
         }
 
+        /// <summary>
+        /// True when the spell is castable on the current main or sub job at its level.
+        /// <see cref="KnowsSpell"/> only reports "ever learned" — the client's
+        /// known-spell mask is account-wide (Windower's get_spells() exposes the same
+        /// mask and likewise lists Cure III on a BRD who once leveled WHM), so this
+        /// gate is what stops off-job casts. Mirrors GearSwap's check_spell job/level
+        /// test. LevelRequired is indexed by job id; &lt;= 0 = not available to that job.
+        /// </summary>
+        public virtual bool MeetsSpellLevelRequirement(EliteAPI.ISpell spell)
+        {
+            if (_pl == null || spell == null || spell.LevelRequired == null)
+            {
+                return false;
+            }
+
+            EliteAPI.PlayerInfo info = _pl.Player.GetPlayerInfo();
+            if (info == null || info.MainJob == 0)
+            {
+                return true; // job unreadable — don't block what we can't evaluate
+            }
+
+            return LevelOk(spell.LevelRequired, info.MainJob, info.MainJobLevel)
+                || LevelOk(spell.LevelRequired, info.SubJob, info.SubJobLevel);
+        }
+
+        private static bool LevelOk(short[] levels, int job, int level)
+        {
+            return job >= 0 && job < levels.Length && levels[job] > 0 && levels[job] <= level;
+        }
+
         /// <summary>Distance in yalms to an entity by its target index; float.MaxValue when unknown.</summary>
-        public float GetEntityDistance(uint targetIndex)
+        public virtual float GetEntityDistance(uint targetIndex)
         {
             if (_pl == null)
             {
@@ -239,9 +278,194 @@ namespace CurePlease.Core
             }
         }
 
-        public int GetSpellRecast(int spellIndex)
+        public virtual int GetSpellRecast(int spellIndex)
         {
             return _pl == null ? -1 : _pl.Recast.GetSpellRecast(spellIndex);
+        }
+
+        private HashSet<int> _ownedItemIds;
+        private DateTime _ownedItemsScannedUtc = DateTime.MinValue;
+
+        /// <summary>
+        /// Item ids owned across the portable containers (inventory, satchel, sack, case,
+        /// wardrobes 1-8). Used for gear detection as a fallback when the equipment table
+        /// (see <see cref="GetEquippedItemIds"/>) is unavailable. Cached for 30 s —
+        /// scans are ~1300 slots.
+        /// </summary>
+        public virtual IReadOnlyCollection<int> GetOwnedItemIds()
+        {
+            if (_pl == null)
+            {
+                return new HashSet<int>();
+            }
+
+            if (_ownedItemIds != null && DateTime.UtcNow - _ownedItemsScannedUtc < TimeSpan.FromSeconds(30))
+            {
+                return _ownedItemIds;
+            }
+
+            var ids = new HashSet<int>();
+            int[] containers =
+            {
+                (int)StorageContainer.Inventory,
+                (int)StorageContainer.Satchel,
+                (int)StorageContainer.Sack,
+                (int)StorageContainer.Case,
+                (int)StorageContainer.Wardrobe,
+                (int)StorageContainer.Wardrobe2,
+                (int)StorageContainer.Wardrobe3,
+                (int)StorageContainer.Wardrobe4,
+                (int)StorageContainer.Wardrobe5,
+                (int)StorageContainer.Wardrobe6,
+                (int)StorageContainer.Wardrobe7,
+                (int)StorageContainer.Wardrobe8,
+            };
+
+            foreach (int container in containers)
+            {
+                try
+                {
+                    int count = _pl.Inventory.GetContainerCount(container);
+                    for (int i = 0; i < count; i++)
+                    {
+                        EliteAPI.InventoryItem item = _pl.Inventory.GetContainerItem(container, i);
+                        if (item != null && item.Id != 0)
+                        {
+                            ids.Add((int)item.Id);
+                        }
+                    }
+                }
+                catch
+                {
+                    // A disabled/absent container must not fail the whole scan.
+                }
+            }
+
+            _ownedItemIds = ids;
+            _ownedItemsScannedUtc = DateTime.UtcNow;
+            return ids;
+        }
+
+        private Dictionary<int, int> _equippedItemIds;
+        private DateTime _equippedItemsScannedUtc = DateTime.MinValue;
+
+        /// <summary>
+        /// Item ids currently equipped, keyed by <see cref="EquipmentSlot"/> value
+        /// (Main=0, Sub=1, Range=2, ...). Read from the client's live equipment table;
+        /// cached for 5 s. Empty when not attached or the table is unavailable.
+        /// </summary>
+        public virtual IReadOnlyDictionary<int, int> GetEquippedItemIds()
+        {
+            if (_pl == null)
+            {
+                return new Dictionary<int, int>();
+            }
+
+            if (_equippedItemIds != null && DateTime.UtcNow - _equippedItemsScannedUtc < TimeSpan.FromSeconds(5))
+            {
+                return _equippedItemIds;
+            }
+
+            var ids = new Dictionary<int, int>();
+            for (int slot = 0; slot < 16; slot++)
+            {
+                try
+                {
+                    EliteAPI.InventoryItem item = _pl.Inventory.GetEquippedItem(slot);
+                    if (item != null && item.Id != 0 && item.Id != 65535)
+                    {
+                        ids[slot] = item.Id;
+                    }
+                }
+                catch
+                {
+                    // A missing equipment table must not fail the whole scan.
+                }
+            }
+
+            _equippedItemIds = ids;
+            _equippedItemsScannedUtc = DateTime.UtcNow;
+            return ids;
+        }
+
+        /// <summary>True when the local player has the named job ability learned/available.</summary>
+        public virtual bool HasAbility(string abilityName)
+        {
+            if (_pl == null || string.IsNullOrWhiteSpace(abilityName))
+            {
+                return false;
+            }
+
+            try
+            {
+                EliteAPI.IAbility ability = _pl.Resources.GetAbility(abilityName.Trim(), 0);
+                return ability != null && ability.ID != 0 && _pl.Player.HasAbility(ability.ID);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Temporary diagnostic for the HasAbility false-negative seen live: reports the
+        /// resource id and raw mask probes through the live attachment so we can tell a
+        /// resource-lookup miss apart from a broken ability-mask read. Soul Voice (bit 25)
+        /// and Valor Minuet V (spell 398) are known-set references on the test character.
+        /// </summary>
+        public virtual string AbilityDebugProbe(string abilityName)
+        {
+            if (_pl == null)
+            {
+                return " [probe: detached]";
+            }
+
+            try
+            {
+                EliteAPI.IAbility a = _pl.Resources.GetAbility(abilityName.Trim(), 0);
+                return " [probe: resId=" + a.ID
+                    + " has(resId)=" + _pl.Player.HasAbility(a.ID)
+                    + " has(163)=" + _pl.Player.HasAbility(163)
+                    + " has(25)=" + _pl.Player.HasAbility(25)
+                    + " spell398=" + _pl.Player.HasSpell(398) + "]";
+            }
+            catch (Exception ex)
+            {
+                return " [probe ex: " + ex.Message + "]";
+            }
+        }
+
+        /// <summary>Raw recast remaining for the named job ability; 0 when ready or unknown.</summary>
+        public virtual int GetAbilityRecast(string abilityName)
+        {
+            if (_pl == null || string.IsNullOrWhiteSpace(abilityName))
+            {
+                return 0;
+            }
+
+            try
+            {
+                EliteAPI.IAbility ability = _pl.Resources.GetAbility(abilityName.Trim(), 0);
+                if (ability == null || ability.ID == 0)
+                {
+                    return 0;
+                }
+
+                List<int> timerIds = _pl.Recast.GetAbilityIds();
+                for (int i = 0; i < timerIds.Count; i++)
+                {
+                    if (timerIds[i] == ability.TimerID)
+                    {
+                        return _pl.Recast.GetAbilityRecast(i);
+                    }
+                }
+
+                return 0;
+            }
+            catch
+            {
+                return 0;
+            }
         }
 
         private static bool ProcessGone(int processId)
