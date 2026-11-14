@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CurePlease/CurePlease.csproj" />
+  </Folder>
+</Solution>
