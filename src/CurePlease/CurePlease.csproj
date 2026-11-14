@@ -8,6 +8,7 @@
     <UseWPF>true</UseWPF>
     <PlatformTarget>x86</PlatformTarget>
     <Version>3.0.0.0</Version>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <!-- FFXI.Memory is expected to be cloned alongside this repo (D:\Code\repos\FFXI.Memory) -->

@@ -1,0 +1,115 @@
+using System;
+using System.IO;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace CurePlease.Settings
+{
+    /// <summary>
+    /// JSON persistence for <see cref="CurePleaseSettings"/> with versioning and
+    /// atomic publication. The engine calls <see cref="Current"/> once per tick and
+    /// gets a consistent snapshot; the UI edits a copy and calls <see cref="Save"/>,
+    /// which swaps the live object in one reference assignment. This replaces the
+    /// legacy static mutable Form2.config read from ~1900 sites.
+    /// </summary>
+    public sealed class SettingsService
+    {
+        private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            DefaultIgnoreCondition = JsonIgnoreCondition.Never,
+        };
+
+        private readonly object _gate = new object();
+        private volatile CurePleaseSettings _current = new CurePleaseSettings();
+
+        /// <summary>Raised after a new settings object becomes live.</summary>
+        public event Action<CurePleaseSettings> SettingsChanged;
+
+        /// <summary>The live settings. Safe to read from any thread; never mutated in place.</summary>
+        public CurePleaseSettings Current => _current;
+
+        public static string DefaultDirectory =>
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CurePlease");
+
+        public static string DefaultPath => Path.Combine(DefaultDirectory, "settings.json");
+
+        /// <summary>Serializes a deep copy — used so the UI can edit without touching live settings.</summary>
+        public static CurePleaseSettings Clone(CurePleaseSettings source)
+        {
+            return JsonSerializer.Deserialize<CurePleaseSettings>(
+                JsonSerializer.Serialize(source, JsonOptions), JsonOptions);
+        }
+
+        public CurePleaseSettings Load(string path)
+        {
+            if (!File.Exists(path))
+            {
+                return Current;
+            }
+
+            string json = File.ReadAllText(path);
+            CurePleaseSettings loaded = JsonSerializer.Deserialize<CurePleaseSettings>(json, JsonOptions)
+                                        ?? new CurePleaseSettings();
+
+            Migrate(loaded);
+            Publish(loaded);
+            return loaded;
+        }
+
+        public void Save(CurePleaseSettings settings, string path)
+        {
+            settings.Version = CurePleaseSettings.CurrentVersion;
+
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            string json = JsonSerializer.Serialize(settings, JsonOptions);
+
+            // Write-then-rename so a crash mid-write cannot corrupt the live file.
+            string temp = path + ".tmp";
+            File.WriteAllText(temp, json);
+            File.Move(temp, path, true);
+
+            Publish(settings);
+        }
+
+        private void Publish(CurePleaseSettings settings)
+        {
+            lock (_gate)
+            {
+                _current = settings;
+            }
+
+            SettingsChanged?.Invoke(settings);
+        }
+
+        /// <summary>Makes an externally-built settings object (e.g. a legacy import) live.</summary>
+        public void Adopt(CurePleaseSettings settings)
+        {
+            Migrate(settings);
+            Publish(settings);
+        }
+
+        /// <summary>Imports a legacy CurePlease 2.x XML file and makes it live. Returns the import report.</summary>
+        public LegacySettingsImporter.ImportResult ImportLegacy(string path)
+        {
+            LegacySettingsImporter.ImportResult result = LegacySettingsImporter.Import(path);
+            Adopt(result.Settings);
+            return result;
+        }
+
+        /// <summary>
+        /// Migration pipeline. Unknown fields are ignored by the deserializer and new
+        /// fields keep their defaults, so migrations only run when the shape changes
+        /// in ways defaults cannot cover.
+        /// </summary>
+        private static void Migrate(CurePleaseSettings settings)
+        {
+            if (settings.Version < 1)
+            {
+                settings.Version = 1;
+            }
+
+            // Future: if (settings.Version < 2) { ... settings.Version = 2; }
+        }
+    }
+}
