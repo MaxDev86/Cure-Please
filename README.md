@@ -2,6 +2,14 @@
 
 Party healing/buffing bot for Final Fantasy XI. Actively maintained continuation of [DanielHazzard/Cure-Please](https://github.com/DanielHazzard/Cure-Please) (discontinued at 2.0.4.4), being modernized to .NET 10 / WPF on top of [FFXI.Memory](https://github.com/MaxDev86/FFXI.Memory).
 
+## Design rule
+
+Cure Please is a decision layer only: it reads game memory and sends `/ma` / `/ja`
+(and at most `/target`) commands. It never manages equipment — gear belongs to the
+player's client-side tooling (e.g. a GearSwap lua), and packet reading/injection is
+out of scope. Bard instrument configuration follows this rule (see
+[docs/bard-design-notes.md](docs/bard-design-notes.md)).
+
 ## Repository layout
 
 - `src/CurePlease/` — the new .NET 10 WPF application (port in progress)

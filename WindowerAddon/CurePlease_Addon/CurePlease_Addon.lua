@@ -100,6 +100,22 @@ casting = nil
 if data.actor_id == windower.ffxi.get_player().id then
   if data.category == 4 then
     casting = 'CUREPLEASE_casting_finished'
+    -- Per-target landing report: CUREPLEASE_action_<spellId>_<name1,name2,...>
+    local names = {}
+    if data.targets ~= nil then
+      for _, target in pairs(data.targets) do
+        local mob = windower.ffxi.get_mob_by_id(target.id)
+        if mob ~= nil and mob.name ~= nil then
+          table.insert(names, mob.name)
+        end
+      end
+    end
+    if #names > 0 then
+      local CP_action = assert(socket.udp())
+      CP_action:settimeout(1)
+      assert(CP_action:sendto('CUREPLEASE_action_' .. tostring(data.param) .. '_' .. table.concat(names, ','), ip, port))
+      CP_action:close()
+    end
   elseif data.category == 8 then
     if data.param == 28787 then
       casting = 'CUREPLEASE_casting_interrupted'

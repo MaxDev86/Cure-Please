@@ -25,6 +25,7 @@ namespace CurePlease.Core
     ///   CUREPLEASE_buffs_&lt;Name&gt;_&lt;id1,id2,...&gt;   full buff list for a party member
     ///   CUREPLEASE_confirmed                            handshake reply to //cpaddon verify
     ///   CUREPLEASE_casting_finished|interrupted|blocked cast outcome events
+    ///   CUREPLEASE_action_&lt;spellId&gt;_&lt;name1,...&gt;       per-target landing report (0x028)
     ///   CUREPLEASE_command_&lt;cmd&gt;                       (ignored; bot-side commands not needed)
     /// </summary>
     public sealed class AddonListener : IDisposable
@@ -44,6 +45,12 @@ namespace CurePlease.Core
 
         /// <summary>Fires on cast outcome events from the addon.</summary>
         public event Action<CastEventKind> CastEvent;
+
+        /// <summary>
+        /// Fires when the addon reports a finished action's landing (0x028): the spell
+        /// id and the display names of every entity it landed on.
+        /// </summary>
+        public event Action<int, string[]> SpellLanded;
 
         /// <summary>Fires when the addon answers a //cpaddon verify handshake.</summary>
         public event Action Handshake;
@@ -192,10 +199,46 @@ namespace CurePlease.Core
                 return;
             }
 
+            if (TryParseActionMessage(message, out int spellId, out string[] recipients))
+            {
+                SpellLanded?.Invoke(spellId, recipients);
+                return;
+            }
+
             if (TryParseBuffMessage(message, out string name, out short[] buffs))
             {
                 _buffs[name] = new BuffEntry { Buffs = buffs, LastSeenUtc = DateTime.UtcNow };
             }
+        }
+
+        /// <summary>
+        /// Parses CUREPLEASE_action_&lt;spellId&gt;_&lt;name1,name2,...&gt;. Public and static so the
+        /// format can be verified without a live socket.
+        /// </summary>
+        public static bool TryParseActionMessage(string message, out int spellId, out string[] recipients)
+        {
+            spellId = 0;
+            recipients = null;
+
+            const string prefix = "CUREPLEASE_action_";
+            if (message == null || !message.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            int separator = message.IndexOf('_', prefix.Length);
+            if (separator <= prefix.Length || separator == message.Length - 1)
+            {
+                return false;
+            }
+
+            if (!int.TryParse(message.Substring(prefix.Length, separator - prefix.Length), out spellId))
+            {
+                return false;
+            }
+
+            recipients = message.Substring(separator + 1).Split(',');
+            return recipients.Length > 0;
         }
 
         /// <summary>
