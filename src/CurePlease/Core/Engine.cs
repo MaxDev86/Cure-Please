@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using CurePlease.Settings;
+using FFXI.Memory;
 
 namespace CurePlease.Core
 {
@@ -13,6 +14,7 @@ namespace CurePlease.Core
         Curaga,
         DebuffRemoval,
         BuffUpkeep,
+        Song,
         JobAbility,
         Item,
     }
@@ -42,6 +44,15 @@ namespace CurePlease.Core
         string Name { get; }
 
         void AddCandidates(GameSnapshot snapshot, CurePleaseSettings settings, List<ActionCandidate> candidates);
+
+        /// <summary>
+        /// Called after the engine executes an action, so modules can confirm state
+        /// (e.g. record a buff's landing time only when the cast actually succeeded).
+        /// Default no-op for modules that do not need feedback.
+        /// </summary>
+        void OnActionExecuted(ActionCandidate candidate, CastResult result)
+        {
+        }
     }
 
     /// <summary>
@@ -193,8 +204,15 @@ namespace CurePlease.Core
                 return;
             }
 
-            // Dead or incapacitated PL does nothing (KO, zoning handled by snapshot).
+            // Dead PL does nothing (KO, zoning handled by snapshot).
             if (snapshot.Player.HP == 0)
+            {
+                return;
+            }
+
+            // Full incapacitation: no actions of any kind are possible.
+            if (HasAnyBuff(snapshot.Player, StatusEffect.Sleep, StatusEffect.Petrification, StatusEffect.Stun,
+                    StatusEffect.Charm1, StatusEffect.Charm2, StatusEffect.Terror))
             {
                 return;
             }
@@ -212,6 +230,17 @@ namespace CurePlease.Core
                 }
             }
 
+            // Partial incapacitation gates: silence/mute/Omerta block spells (items stay
+            // usable), amnesia/impairment block job abilities.
+            bool spellsLocked = HasAnyBuff(snapshot.Player, StatusEffect.Silence, StatusEffect.Mute, StatusEffect.Omerta);
+            bool abilitiesLocked = HasAnyBuff(snapshot.Player, StatusEffect.Amnesia, StatusEffect.Impairment);
+            if (spellsLocked || abilitiesLocked)
+            {
+                candidates.RemoveAll(c =>
+                    (spellsLocked && !c.IsJobAbility && c.Category != ActionCategory.Item)
+                    || (abilitiesLocked && c.IsJobAbility));
+            }
+
             if (candidates.Count == 0)
             {
                 return;
@@ -223,8 +252,35 @@ namespace CurePlease.Core
                 ? await _casting.JobAbilityAsync(best.ActionName, best.TargetName, ct).ConfigureAwait(false)
                 : await _casting.CastAsync(best.ActionName, best.TargetName, ct).ConfigureAwait(false);
 
-            RaiseLog(string.Format("[{0:0.0}] {1} — {2}", best.Score, best.Description, result.Outcome));
+            RaiseLog(string.Format("[{0:0.0}] {1} — {2}{3}", best.Score, best.Description, result.Outcome,
+                result.Detail.Length > 0 ? " (" + result.Detail + ")" : string.Empty));
+
+            foreach (IDecisionModule module in _modules)
+            {
+                try
+                {
+                    module.OnActionExecuted(best, result);
+                }
+                catch (Exception ex)
+                {
+                    RaiseLog(module.Name + " feedback error: " + ex.Message);
+                }
+            }
+
             ActionExecuted?.Invoke(result);
+        }
+
+        private static bool HasAnyBuff(PlayerState player, params FFXI.Memory.StatusEffect[] effects)
+        {
+            foreach (FFXI.Memory.StatusEffect effect in effects)
+            {
+                if (player.HasBuff(effect))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void RaiseLog(string message)

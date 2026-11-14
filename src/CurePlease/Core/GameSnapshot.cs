@@ -103,6 +103,15 @@ namespace CurePlease.Core
         /// <summary>All 18 party/alliance slots; check <see cref="PartyMemberState.Active"/>.</summary>
         public IReadOnlyList<PartyMemberState> PartyMembers { get; set; } = Array.Empty<PartyMemberState>();
 
+        /// <summary>Current main target's server id; 0 when nothing is targeted.</summary>
+        public uint TargetId { get; set; }
+
+        /// <summary>Current main target's display name; empty when nothing is targeted.</summary>
+        public string TargetName { get; set; } = string.Empty;
+
+        /// <summary>Current main target's HP percentage (0..100).</summary>
+        public byte TargetHpp { get; set; }
+
         /// <summary>Name of the monitored character (second attached process), if any.</summary>
         public string MonitoredName { get; set; }
 
