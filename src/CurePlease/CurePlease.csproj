@@ -16,4 +16,9 @@
     <ProjectReference Include="..\..\..\FFXI.Memory\FFXI.Memory.csproj" AdditionalProperties="Configuration=$(Configuration)" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Serilog" Version="4.3.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+  </ItemGroup>
+
 </Project>

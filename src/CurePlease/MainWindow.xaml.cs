@@ -66,9 +66,18 @@ namespace CurePlease
 
             _engine.Log += message => Dispatcher.BeginInvoke(new Action(() => AppendLog(message)));
             _engine.SnapshotReady += snapshot => Dispatcher.BeginInvoke(new Action(() => UpdateSnapshot(snapshot)));
+
+            // File log gets the outcome detail the UI line omits (elapsed time).
+            _engine.ActionExecuted += result => Serilog.Log.Information(
+                "Cast {Spell} -> {Target}: {Outcome} in {ElapsedMs:0} ms{Detail}",
+                result.SpellName, result.TargetName, result.Outcome, result.Elapsed.TotalMilliseconds,
+                result.Detail.Length > 0 ? " [" + result.Detail + "]" : string.Empty);
+
             _state.StateChanged += state => Dispatcher.BeginInvoke(new Action(() =>
             {
                 StatusText.Text = state.ToString();
+                Serilog.Log.Information("Connection state: {State}{Error}", state,
+                    state == ConnectionState.Lost && _state.LastError != null ? " (" + _state.LastError + ")" : string.Empty);
                 StartButton.IsEnabled = state == ConnectionState.Connected && !_engine.IsRunning;
 
                 if (state == ConnectionState.Connected)
@@ -222,6 +231,10 @@ namespace CurePlease
         {
             LogBox.AppendText(DateTime.Now.ToString("HH:mm:ss") + "  " + message + Environment.NewLine);
             LogBox.ScrollToEnd();
+
+            // Mirror everything the UI log shows to the rolling file (quoted — log
+            // lines are plain text, not message templates).
+            Serilog.Log.Information("{LogLine}", message);
         }
 
         private async void OnClosing(object sender, CancelEventArgs e)
