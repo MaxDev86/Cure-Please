@@ -13,6 +13,23 @@ namespace CurePlease.Core
         Lost,
     }
 
+    /// <summary>Snapshot of one entity-array slot, as returned by <see cref="GameStateService.FindEntityByName"/>.</summary>
+    public sealed class EntityInfo
+    {
+        public int Index { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public uint ServerId { get; set; }
+
+        /// <summary>Raw entity status field (1 = engaged/fighting).</summary>
+        public uint Status { get; set; }
+
+        /// <summary>Distance from the local player in yalms.</summary>
+        public float Distance { get; set; }
+        public float X { get; set; }
+        public float Y { get; set; }
+        public float Z { get; set; }
+    }
+
     /// <summary>
     /// Owns the FFXI.Memory API instances (local player + optional monitored process)
     /// and produces one consistent <see cref="GameSnapshot"/> per engine tick.
@@ -157,6 +174,27 @@ namespace CurePlease.Core
                 {
                     snapshot.MonitoredName = _monitored.Player.Name ?? string.Empty;
                     snapshot.MonitoredBuffs = _monitored.Player.GetPlayerInfo().Buffs ?? Array.Empty<short>();
+                    snapshot.MonitoredStatus = _monitored.Player.PlayerState;
+                }
+
+                try
+                {
+                    // Pet data is best-effort (GEO luopan). PetIndex is 0 when no pet is
+                    // out — entity slot 0 must NOT be read as a pet in that case.
+                    snapshot.PetIndex = _pl.Player.PetIndex;
+                    if (snapshot.PetIndex != 0)
+                    {
+                        EliteAPI.XiEntity pet = _pl.Entity.GetEntity(snapshot.PetIndex);
+                        if (pet != null)
+                        {
+                            snapshot.PetHealthPercent = pet.HealthPercent;
+                            snapshot.PetDistance = pet.Distance;
+                        }
+                    }
+                }
+                catch
+                {
+                    snapshot.PetIndex = 0;
                 }
 
                 SetState(ConnectionState.Connected);
@@ -271,6 +309,79 @@ namespace CurePlease.Core
             {
                 EliteAPI.XiEntity entity = _pl.Entity.GetEntity((int)targetIndex);
                 return entity == null ? float.MaxValue : entity.Distance;
+            }
+            catch
+            {
+                return float.MaxValue;
+            }
+        }
+
+        /// <summary>
+        /// Finds a spawned entity by display name (case-insensitive) in the client entity
+        /// array (2304 slots). Null when not found or unreadable. Costs one full array
+        /// scan — callers should use it at tick rate at most, not per candidate.
+        /// </summary>
+        public virtual EntityInfo FindEntityByName(string name)
+        {
+            if (_pl == null || string.IsNullOrWhiteSpace(name))
+            {
+                return null;
+            }
+
+            string wanted = name.Trim();
+            for (int i = 0; i < 2304; i++)
+            {
+                EliteAPI.XiEntity entity;
+                try
+                {
+                    entity = _pl.Entity.GetEntity(i);
+                }
+                catch
+                {
+                    return null;
+                }
+
+                if (entity != null && !string.IsNullOrEmpty(entity.Name)
+                    && entity.Name.Equals(wanted, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new EntityInfo
+                    {
+                        Index = i,
+                        Name = entity.Name,
+                        ServerId = entity.ServerID,
+                        Status = entity.Status,
+                        Distance = entity.Distance,
+                        X = entity.X,
+                        Y = entity.Y,
+                        Z = entity.Z,
+                    };
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>3D distance in yalms between two entity-array slots; float.MaxValue when either is unreadable.</summary>
+        public virtual float GetDistanceBetweenEntities(int indexA, int indexB)
+        {
+            if (_pl == null)
+            {
+                return float.MaxValue;
+            }
+
+            try
+            {
+                EliteAPI.XiEntity a = _pl.Entity.GetEntity(indexA);
+                EliteAPI.XiEntity b = _pl.Entity.GetEntity(indexB);
+                if (a == null || b == null)
+                {
+                    return float.MaxValue;
+                }
+
+                float dx = a.X - b.X;
+                float dy = a.Y - b.Y;
+                float dz = a.Z - b.Z;
+                return (float)Math.Sqrt(dx * dx + dy * dy + dz * dz);
             }
             catch
             {

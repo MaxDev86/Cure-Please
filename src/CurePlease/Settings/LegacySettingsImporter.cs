@@ -166,6 +166,64 @@ namespace CurePlease.Settings
 
             settings.Bard.Enabled = settings.Bard.PartySongs.Count > 0;
 
+            // --- Geomancer (legacy *_Spell ints are indices into the fixed GeomancerInfo pair table) ---
+            GeoSettings geo = settings.Geo;
+            bool indiEnabled = GetBool(values, "EnableGeoSpells", ref mapped);
+            if (values.ContainsKey("IndiWhenEngaged"))
+            {
+                geo.IndiOnlyWhenEngaged = GetBool(values, "IndiWhenEngaged", ref mapped);
+            }
+
+            geo.LuopanEnabled = GetBool(values, "EnableLuopanSpells", ref mapped);
+
+            if (indiEnabled)
+            {
+                geo.IndiSpell = LegacyGeoSpell(GetInt(values, "IndiSpell_Spell", ref mapped), "Indi-") ?? string.Empty;
+            }
+
+            if (geo.LuopanEnabled)
+            {
+                geo.GeoSpell = LegacyGeoSpell(GetInt(values, "GeoSpell_Spell", ref mapped), "Geo-") ?? string.Empty;
+            }
+
+            geo.EntrustSpell = LegacyGeoSpell(GetInt(values, "EntrustedSpell_Spell", ref mapped), "Indi-") ?? string.Empty;
+            geo.EntrustTarget = GetString(values, "EntrustedSpell_Target", ref mapped);
+
+            // Legacy LuopanSpell_Target was dual-purpose: the enemy name when
+            // specifiedEngageTarget was set, otherwise the luopan placement character.
+            string luopanTarget = GetString(values, "LuopanSpell_Target", ref mapped);
+            if (GetBool(values, "specifiedEngageTarget", ref mapped))
+            {
+                geo.EngagedTargetName = luopanTarget;
+            }
+            else
+            {
+                geo.LuopanTarget = luopanTarget;
+            }
+
+            geo.UseEntrust = GetBool(values, "Entrust", ref mapped);
+            geo.UseBlazeOfGlory = GetBool(values, "BlazeOfGlory", ref mapped);
+            geo.UseDematerialize = GetBool(values, "Dematerialize", ref mapped);
+            geo.UseEclipticAttrition = GetBool(values, "EclipticAttrition", ref mapped);
+            if (values.ContainsKey("LifeCycle"))
+            {
+                geo.UseLifeCycle = GetBool(values, "LifeCycle", ref mapped);
+            }
+
+            if (values.ContainsKey("FullCircle"))
+            {
+                geo.UseFullCircle = GetBool(values, "FullCircle", ref mapped);
+            }
+
+            geo.UseRadialArcana = GetBool(values, "RadialArcana", ref mapped);
+            uint radialMp = GetUInt(values, "RadialArcanaMP", ref mapped);
+            if (radialMp > 0)
+            {
+                geo.RadialArcanaMpBelow = radialMp;
+            }
+
+            geo.Enabled = indiEnabled || geo.LuopanEnabled;
+
             // --- Report the rest as ignored ---
             result.MappedCount = mapped;
             result.IgnoredCount = values.Count - mapped;
@@ -266,6 +324,34 @@ namespace CurePlease.Settings
                 case 71: return "Sentinel's Scherzo";
                 default: return null;
             }
+        }
+
+        /// <summary>
+        /// Legacy geo combo index -> spell name. Indices come from the fixed
+        /// GeomancerInfo table in legacy Form1.cs (geo_position order).
+        /// </summary>
+        private static string LegacyGeoSpell(int index, string prefix)
+        {
+            string[] suffixes =
+            {
+                "Voidance", "Precision", "Regen", "Haste", "Attunement", "Focus", "Barrier", "Refresh",
+                "CHR", "MND", "Fury", "INT", "AGI", "Fend", "VIT", "DEX", "Acumen", "STR",
+                "Poison", "Slow", "Torpor", "Slip", "Languor", "Paralysis", "Vex", "Frailty",
+                "Wilt", "Malaise", "Gravity", "Fade",
+            };
+
+            return index >= 0 && index < suffixes.Length ? prefix + suffixes[index] : null;
+        }
+
+        private static string GetString(Dictionary<string, string> values, string key, ref int mapped)
+        {
+            if (values.TryGetValue(key, out string raw))
+            {
+                mapped++;
+                return raw ?? string.Empty;
+            }
+
+            return string.Empty;
         }
 
         private static bool GetBool(Dictionary<string, string> values, string key, ref int mapped)

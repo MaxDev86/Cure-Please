@@ -15,6 +15,7 @@ namespace CurePlease.Core
         DebuffRemoval,
         BuffUpkeep,
         Song,
+        Geo,
         JobAbility,
         Item,
     }

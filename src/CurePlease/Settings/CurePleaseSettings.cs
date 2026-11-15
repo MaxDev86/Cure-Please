@@ -20,6 +20,7 @@ namespace CurePlease.Settings
         public PrioritySettings Priorities { get; set; } = new PrioritySettings();
         public BuffSettings Buffs { get; set; } = new BuffSettings();
         public BardSettings Bard { get; set; } = new BardSettings();
+        public GeoSettings Geo { get; set; } = new GeoSettings();
         public DebuffSettings Debuffs { get; set; } = new DebuffSettings();
         public AddonSettings Addon { get; set; } = new AddonSettings();
 
@@ -129,6 +130,9 @@ namespace CurePlease.Settings
 
         /// <summary>Base score for bard songs (JA prep steps score above this).</summary>
         public double SongWeight { get; set; } = 25.0;
+
+        /// <summary>Base score for geomancer actions (Indi upkeep, luopan placement; prep JAs score above this).</summary>
+        public double GeoWeight { get; set; } = 24.0;
 
         /// <summary>Names of high-priority party members (replaces per-slot checkboxes).</summary>
         public List<string> HighPriorityMembers { get; set; } = new List<string>();
@@ -273,6 +277,73 @@ namespace CurePlease.Settings
 
         /// <summary>AoE song reach with Horn; recipients beyond this are skipped (9.9 per the guide).</summary>
         public double SongRangeYalms { get; set; } = 9.9;
+    }
+
+    /// <summary>
+    /// Geomancer support: one Indicolure aura (presence-based via buff 612 Colure
+    /// Active) plus one luopan (pet-based via Player.PetIndex). Spell names, not the
+    /// legacy combo indices. See docs/geo-design-notes.md.
+    /// </summary>
+    public sealed class GeoSettings
+    {
+        /// <summary>Master switch; the module also requires main or sub job GEO.</summary>
+        public bool Enabled { get; set; }
+
+        /// <summary>Indicolure spell to keep up on self (e.g. "Indi-Fury"). Empty = no Indi upkeep.</summary>
+        public string IndiSpell { get; set; } = string.Empty;
+
+        /// <summary>Only (re)cast the Indi spell while engaged.</summary>
+        public bool IndiOnlyWhenEngaged { get; set; } = true;
+
+        /// <summary>Master switch for luopan placement and management.</summary>
+        public bool LuopanEnabled { get; set; }
+
+        /// <summary>Geocolure spell to place (e.g. "Geo-Frailty"). Empty = no luopan.</summary>
+        public string GeoSpell { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Character a beneficial luopan is centered on. Empty = the monitored
+        /// character when one is attached, otherwise self.
+        /// </summary>
+        public string LuopanTarget { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Optional enemy name used for the engagement check and as the cast target of
+        /// an offensive luopan (legacy specifiedEngageTarget + the dual-purpose
+        /// LuopanSpell_Target, split into two explicit settings). Empty = monitored
+        /// character's engagement, falling back to the local player's.
+        /// </summary>
+        public string EngagedTargetName { get; set; } = string.Empty;
+
+        /// <summary>Blaze of Glory before dropping a luopan (luopan gets halved HP).</summary>
+        public bool UseBlazeOfGlory { get; set; }
+
+        /// <summary>Ecliptic Attrition on a healthy luopan (>= 90% HP, drains it faster).</summary>
+        public bool UseEclipticAttrition { get; set; }
+
+        /// <summary>Dematerialize on a healthy luopan (>= 90% HP).</summary>
+        public bool UseDematerialize { get; set; }
+
+        /// <summary>Life Cycle when the luopan is at 5-30% HP and the player is at >= 90%.</summary>
+        public bool UseLifeCycle { get; set; } = true;
+
+        /// <summary>Full Circle a luopan that ended up >= 10 yalms from the action, then re-drop it.</summary>
+        public bool UseFullCircle { get; set; } = true;
+
+        /// <summary>Entrust before casting <see cref="EntrustSpell"/> on a single target.</summary>
+        public bool UseEntrust { get; set; }
+
+        /// <summary>Indicolure spell cast on <see cref="EntrustTarget"/> while Entrust is up.</summary>
+        public string EntrustSpell { get; set; } = string.Empty;
+
+        /// <summary>Entrusted spell target. Empty = the monitored character when one is attached.</summary>
+        public string EntrustTarget { get; set; } = string.Empty;
+
+        /// <summary>Radial Arcana (consumes the luopan, restores MP) when MP drops to the threshold.</summary>
+        public bool UseRadialArcana { get; set; }
+
+        /// <summary>MP at or below which Radial Arcana fires (luopan must be up and near the player).</summary>
+        public uint RadialArcanaMpBelow { get; set; } = 300;
     }
 
     /// <summary>

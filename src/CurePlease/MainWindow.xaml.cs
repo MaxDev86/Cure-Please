@@ -35,6 +35,9 @@ namespace CurePlease
             BardModule bard = new BardModule(_state);
             bard.Log += message => Dispatcher.BeginInvoke(new Action(() => AppendLog(message)));
             _engine.RegisterModule(bard);
+            GeoModule geo = new GeoModule(_state);
+            geo.Log += message => Dispatcher.BeginInvoke(new Action(() => AppendLog(message)));
+            _engine.RegisterModule(geo);
 
             // Load persisted settings before anything reads Current (addon port below).
             try

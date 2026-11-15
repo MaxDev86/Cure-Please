@@ -119,6 +119,21 @@ namespace CurePlease.Core
         public short[] MonitoredBuffs { get; set; } = Array.Empty<short>();
 
         /// <summary>
+        /// The monitored character's live entity status (engaged, idle, ...). Only
+        /// meaningful when <see cref="MonitoredName"/> is non-empty.
+        /// </summary>
+        public EntityStatus MonitoredStatus { get; set; }
+
+        /// <summary>The local player's pet entity index; 0 when no pet (e.g. no luopan) is out.</summary>
+        public ushort PetIndex { get; set; }
+
+        /// <summary>Pet health percent (0..100); 0 when no pet or unreadable.</summary>
+        public byte PetHealthPercent { get; set; }
+
+        /// <summary>Pet distance from the local player in yalms; 0 when no pet or unreadable.</summary>
+        public float PetDistance { get; set; }
+
+        /// <summary>
         /// Party-member buffs from the addon provider (own party only — the server
         /// never sends other parties' buffs). Keyed by character name, case-insensitive.
         /// Empty when the addon is not running.
