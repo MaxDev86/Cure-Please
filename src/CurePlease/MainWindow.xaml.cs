@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using CurePlease.Core;
@@ -18,6 +19,7 @@ namespace CurePlease
         private readonly GameStateService _state = new GameStateService();
         private readonly CastingService _casting;
         private readonly SettingsService _settings = new SettingsService();
+        private readonly ProfileService _profiles;
         private readonly Engine _engine;
         private readonly AddonListener _addon = new AddonListener();
 
@@ -39,26 +41,43 @@ namespace CurePlease
             geo.Log += message => Dispatcher.BeginInvoke(new Action(() => AppendLog(message)));
             _engine.RegisterModule(geo);
 
-            // Load persisted settings before anything reads Current (addon port below).
+            // Profiles live next to the exe (<exe>\profiles). Startup: load the
+            // default profile; on first run migrate the old %appdata% settings file
+            // into it so existing setups keep working. Job-combo profiles
+            // (WHM_SCH.json, Alternate_BRD_NIN.json, ...) auto-switch per snapshot.
+            _profiles = new ProfileService(_settings);
+            _profiles.ProfileSwitched += name => Dispatcher.BeginInvoke(new Action(() =>
+            {
+                AppendLog("Profile active: " + name);
+                Serilog.Log.Information("Profile active: {Profile}", name);
+            }));
+
             try
             {
-                if (System.IO.File.Exists(SettingsService.DefaultPath))
+                string defaultProfile = Path.Combine(_profiles.DirectoryPath, ProfileService.DefaultProfileName + ".json");
+                if (File.Exists(defaultProfile))
                 {
+                    _profiles.SwitchTo(ProfileService.DefaultProfileName);
+                }
+                else if (File.Exists(SettingsService.DefaultPath))
+                {
+                    // One-time migration: the pre-profiles settings file becomes default.json.
                     _settings.Load(SettingsService.DefaultPath);
-                    AppendLog("Settings loaded from " + SettingsService.DefaultPath);
+                    _profiles.SaveAs(ProfileService.DefaultProfileName);
+                    AppendLog("Migrated " + SettingsService.DefaultPath + " to profile 'default'");
                 }
                 else
                 {
-                    // TEMPORARY: seed a default settings file so there is something to edit.
+                    // TEMPORARY: seed a default profile so there is something to edit.
                     // Later: nothing is preloaded or auto-generated — the user picks and
-                    // loads a settings file explicitly.
-                    _settings.Save(_settings.Current, SettingsService.DefaultPath);
-                    AppendLog("Created default settings at " + SettingsService.DefaultPath);
+                    // loads a profile explicitly.
+                    _profiles.SaveAs(ProfileService.DefaultProfileName);
+                    AppendLog("Created default profile at " + defaultProfile);
                 }
             }
             catch (Exception ex)
             {
-                AppendLog("Settings load failed (using defaults): " + ex.Message);
+                AppendLog("Profile load failed (using defaults): " + ex.Message);
             }
 
             _addon.CastEvent += kind => _casting.NotifyCastEvent(kind);
@@ -68,7 +87,15 @@ namespace CurePlease
             _addon.Start(_settings.Current.Addon.Port);
 
             _engine.Log += message => Dispatcher.BeginInvoke(new Action(() => AppendLog(message)));
-            _engine.SnapshotReady += snapshot => Dispatcher.BeginInvoke(new Action(() => UpdateSnapshot(snapshot)));
+            _engine.SnapshotReady += snapshot => Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (snapshot != null)
+                {
+                    _profiles.ConsiderSnapshot(snapshot);
+                }
+
+                UpdateSnapshot(snapshot);
+            }));
 
             // File log gets the outcome detail the UI line omits (elapsed time).
             _engine.ActionExecuted += result => Serilog.Log.Information(
@@ -101,7 +128,13 @@ namespace CurePlease
             {
                 if (!_engine.IsRunning && _state.IsAttached)
                 {
-                    UpdateSnapshot(_state.TakeSnapshot());
+                    GameSnapshot snapshot = _state.TakeSnapshot();
+                    if (snapshot != null)
+                    {
+                        _profiles.ConsiderSnapshot(snapshot);
+                    }
+
+                    UpdateSnapshot(snapshot);
                 }
             };
             previewTimer.Start();
