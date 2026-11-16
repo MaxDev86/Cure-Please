@@ -119,3 +119,32 @@ Legacy import maps `IndiSpell_Spell` / `GeoSpell_Spell` /
 (the fixed 30-entry Indi/Geo pair list in Form1.cs) into names, and the
 dual-purpose `LuopanSpell_Target` into `LuopanTarget` plus
 `EngagedTargetName` when `specifiedEngageTarget` was set.
+
+## Enmity assist (shipped)
+
+An offensive luopon's debuff only lands on enemies the GEO has hate with
+(user-confirmed; hate lists are not readable from memory, so detection is
+deliberately avoided). Replaces legacy's "Hate Establisher"
+(`autoTarget`/`Hate_SpellType`, Form1.cs:6590):
+
+- The **named player** (`EnmityPlayerName` — the tank/DD) drives everything:
+  their entity's `TargetingIndex` identifies the current enemy. The monitored
+  character is NOT usable here — PL and monitored are often the same character.
+- **Party mode** casts `EnmitySpell` on the named player (default "Cure");
+  **enemy mode** (`EnmityCastOnEnemy`) casts it on the enemy **by name** — no
+  target switching, so legacy's `DisableTargettingCancel` dance is gone.
+- Fires once per enemy change, once per fresh offensive bubble placement
+  (re-armed on a successful Geo-* cast; bypasses the failure backoff), and
+  optionally every `EnmityRefreshSeconds` while a bubble is up. Offered at
+  score +6, ahead of the placement cast, so the first pulse works.
+- Only active when the configured `GeoSpell` is enemy-targeted (bit 32);
+  beneficial luopons (Geo-Regen etc.) never trigger it.
+- `EnmitySpellCatalog` (generated from Windower's spells.lua by
+  tools/gen_enmity_catalog.py) feeds the dropdowns: party mode = party-targetable
+  spells obtainable from a sub job (level <= 49); enemy mode = strictly-hostile
+  spells, GEO native (nukes, Sleep/Sleep II, Stonera line) or sub job <= 49.
+  `EnmitySubJobId` filters (0 = Any). Strictly-hostile = enemy bit set without
+  player/party bits (Cure targets=63 stays out of the enemy list).
+- Legacy import: `autoTarget` -> `EnmityAssist`, `autoTarget_Target` ->
+  `EnmityPlayerName`, `autoTargetSpell` -> `EnmitySpell`, `Hate_SpellType`
+  0/1 -> enemy/party mode.

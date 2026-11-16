@@ -17,14 +17,18 @@ namespace CurePlease.Core
     }
 
     /// <summary>
-    /// Listens for the CurePlease Windower/Ashita addon's UDP messages and exposes
+    /// Listens for the CurePleaseNext Windower addon's UDP messages and exposes
     /// them as typed, timestamped state. Replaces the legacy AddonReader
     /// BackgroundWorker (swallowed errors, infinite restart, no staleness).
     ///
-    /// Protocol (port 19769 by default):
+    /// Protocol (port 19771 by default; legacy addon used 19769):
     ///   CUREPLEASE_buffs_&lt;Name&gt;_&lt;id1,id2,...&gt;   full buff list for a party member
-    ///   CUREPLEASE_confirmed                            handshake reply to //cpaddon verify
-    ///   CUREPLEASE_casting_finished|interrupted|blocked cast outcome events
+    ///   CUREPLEASE_confirmed_&lt;CharName&gt;               v2 handshake reply to //cpnext verify
+    ///   CUREPLEASE_confirmed                            legacy handshake (no sender name)
+    ///   CUREPLEASE_casting2_&lt;CharName&gt;_finished|interrupted|blocked
+    ///                                                     v2 cast outcome events, name-keyed so
+    ///                                                     multiple game instances don't cross-talk
+    ///   CUREPLEASE_casting_finished|interrupted|blocked   legacy cast events (sender null)
     ///   CUREPLEASE_action_&lt;spellId&gt;_&lt;name1,...&gt;       per-target landing report (0x028)
     ///   CUREPLEASE_command_&lt;cmd&gt;                       (ignored; bot-side commands not needed)
     /// </summary>
@@ -43,8 +47,13 @@ namespace CurePlease.Core
         private CancellationTokenSource _cts;
         private Task _loop;
 
-        /// <summary>Fires on cast outcome events from the addon.</summary>
-        public event Action<CastEventKind> CastEvent;
+        /// <summary>
+        /// Fires on cast outcome events from the addon. The string is the casting
+        /// character's name (v2 name-keyed messages), or null for legacy anonymous
+        /// messages — callers driving one attachment should ignore events that name
+        /// a different character.
+        /// </summary>
+        public event Action<string, CastEventKind> CastEvent;
 
         /// <summary>
         /// Fires when the addon reports a finished action's landing (0x028): the spell
@@ -52,8 +61,8 @@ namespace CurePlease.Core
         /// </summary>
         public event Action<int, string[]> SpellLanded;
 
-        /// <summary>Fires when the addon answers a //cpaddon verify handshake.</summary>
-        public event Action Handshake;
+        /// <summary>Fires when the addon answers a //cpnext verify handshake. Argument is the character name (v2) or null (legacy).</summary>
+        public event Action<string> Handshake;
 
         /// <summary>Fires on listener errors (bind failures, malformed packets are counted, not reported).</summary>
         public event Action<string> Error;
@@ -69,6 +78,17 @@ namespace CurePlease.Core
         /// <summary>True when the addon has answered a handshake recently.</summary>
         public bool Connected => LastHandshakeUtc.HasValue
                                  && (DateTime.UtcNow - LastHandshakeUtc.Value) < TimeSpan.FromMinutes(2);
+
+        private readonly ConcurrentDictionary<string, DateTime> _handshakesByName =
+            new ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>True when the named character's addon answered a handshake recently (v2 name-keyed handshake).</summary>
+        public bool ConnectedFor(string characterName)
+        {
+            return characterName != null
+                && _handshakesByName.TryGetValue(characterName, out DateTime when)
+                && DateTime.UtcNow - when < TimeSpan.FromMinutes(2);
+        }
 
         public void Start(int port)
         {
@@ -174,28 +194,21 @@ namespace CurePlease.Core
 
         private void Dispatch(string message)
         {
-            if (message.Equals("CUREPLEASE_confirmed", StringComparison.Ordinal))
+            if (TryParseHandshake(message, out string confirmedBy))
             {
                 LastHandshakeUtc = DateTime.UtcNow;
-                Handshake?.Invoke();
+                if (confirmedBy != null)
+                {
+                    _handshakesByName[confirmedBy] = DateTime.UtcNow;
+                }
+
+                Handshake?.Invoke(confirmedBy);
                 return;
             }
 
-            if (message.Equals("CUREPLEASE_casting_finished", StringComparison.Ordinal))
+            if (TryParseCastEvent(message, out string caster, out CastEventKind kind))
             {
-                CastEvent?.Invoke(CastEventKind.Finished);
-                return;
-            }
-
-            if (message.Equals("CUREPLEASE_casting_interrupted", StringComparison.Ordinal))
-            {
-                CastEvent?.Invoke(CastEventKind.Interrupted);
-                return;
-            }
-
-            if (message.Equals("CUREPLEASE_casting_blocked", StringComparison.Ordinal))
-            {
-                CastEvent?.Invoke(CastEventKind.Blocked);
+                CastEvent?.Invoke(caster, kind);
                 return;
             }
 
@@ -208,6 +221,87 @@ namespace CurePlease.Core
             if (TryParseBuffMessage(message, out string name, out short[] buffs))
             {
                 _buffs[name] = new BuffEntry { Buffs = buffs, LastSeenUtc = DateTime.UtcNow };
+            }
+        }
+
+        /// <summary>
+        /// Parses CUREPLEASE_confirmed (legacy; name null) and CUREPLEASE_confirmed_&lt;Name&gt;
+        /// (v2 name-keyed). Public and static so the format can be verified without a live socket.
+        /// </summary>
+        public static bool TryParseHandshake(string message, out string characterName)
+        {
+            characterName = null;
+            const string prefix = "CUREPLEASE_confirmed";
+
+            if (message == null || !message.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            if (message.Length == prefix.Length)
+            {
+                return true; // legacy bare handshake
+            }
+
+            if (message[prefix.Length] != '_' || message.Length == prefix.Length + 1)
+            {
+                return false;
+            }
+
+            characterName = message.Substring(prefix.Length + 1);
+            return true;
+        }
+
+        /// <summary>
+        /// Parses cast outcome events: CUREPLEASE_casting2_&lt;Name&gt;_&lt;outcome&gt; (v2,
+        /// name-keyed) and CUREPLEASE_casting_&lt;outcome&gt; (legacy; caster null).
+        /// Public and static so the format can be verified without a live socket.
+        /// </summary>
+        public static bool TryParseCastEvent(string message, out string caster, out CastEventKind kind)
+        {
+            caster = null;
+            kind = default;
+
+            if (message == null)
+            {
+                return false;
+            }
+
+            const string v2Prefix = "CUREPLEASE_casting2_";
+            if (message.StartsWith(v2Prefix, StringComparison.Ordinal))
+            {
+                int separator = message.LastIndexOf('_');
+                if (separator <= v2Prefix.Length || separator == message.Length - 1)
+                {
+                    return false;
+                }
+
+                if (!TryParseOutcome(message.Substring(separator + 1), out kind))
+                {
+                    return false;
+                }
+
+                caster = message.Substring(v2Prefix.Length, separator - v2Prefix.Length);
+                return true;
+            }
+
+            const string v1Prefix = "CUREPLEASE_casting_";
+            if (message.StartsWith(v1Prefix, StringComparison.Ordinal))
+            {
+                return TryParseOutcome(message.Substring(v1Prefix.Length), out kind);
+            }
+
+            return false;
+        }
+
+        private static bool TryParseOutcome(string outcome, out CastEventKind kind)
+        {
+            switch (outcome)
+            {
+                case "finished": kind = CastEventKind.Finished; return true;
+                case "interrupted": kind = CastEventKind.Interrupted; return true;
+                case "blocked": kind = CastEventKind.Blocked; return true;
+                default: kind = default; return false;
             }
         }
 
