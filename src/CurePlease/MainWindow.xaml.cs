@@ -31,6 +31,12 @@ namespace CurePlease
         /// <summary>Open Buffs popups by member name — one per member.</summary>
         private readonly Dictionary<string, PlayerBuffsPopup> _buffPopups = new Dictionary<string, PlayerBuffsPopup>(StringComparer.OrdinalIgnoreCase);
         private string _lastPlayerName = "";
+        private PlayerJobsWindow _jobsWindow;
+
+        // Job stats change rarely; re-read at most every 10 s or on job/character change.
+        private List<JobStatusRow> _jobStats;
+        private DateTime _jobStatsReadUtc = DateTime.MinValue;
+        private string _jobStatsKey = string.Empty;
 
         public MainWindow()
         {
@@ -331,6 +337,8 @@ namespace CurePlease
             if (snapshot == null)
             {
                 PlayerText.Text = "—";
+                JobStatsText.Text = string.Empty;
+                _jobStatsKey = string.Empty;
                 PartyGrid.ItemsSource = null;
                 return;
             }
@@ -343,6 +351,8 @@ namespace CurePlease
                 pl.MainJob, pl.SubJob, pl.ZoneId,
                 string.Join(",", pl.Buffs.Where(b => b > 0 && b != 255)));
 
+            UpdateJobStats(pl);
+
             PartyGrid.ItemsSource = snapshot.PartyMembers
                 .Where(m => m.Active && m.Name.Length > 0)
                 .GroupBy(m => m.ServerId) // stale duplicate slots can carry the same character twice
@@ -350,6 +360,55 @@ namespace CurePlease
                 .OrderBy(m => m.MemberNumber)
                 .Select(m => new PartyRow(m, pl.Name, _playerBuffs))
                 .ToList();
+        }
+
+        /// <summary>
+        /// "WHM99/SCH59 — Mastered (ML 50)" / "… — JP 231/2100" next to the player
+        /// line. Reads are cached 10 s and re-done on character/job change; the
+        /// More Info window reads fresh on open/Refresh instead.
+        /// </summary>
+        private void UpdateJobStats(PlayerState pl)
+        {
+            string key = pl.Name + "|" + pl.MainJob + "|" + pl.MainJobLevel;
+            if (key != _jobStatsKey || DateTime.UtcNow - _jobStatsReadUtc > TimeSpan.FromSeconds(10))
+            {
+                _jobStatsKey = key;
+                _jobStatsReadUtc = DateTime.UtcNow;
+                _jobStats = _state.GetJobStatuses();
+            }
+
+            if (_jobStats == null)
+            {
+                JobStatsText.Text = string.Empty;
+                return;
+            }
+
+            string text = ProfileService.JobAbbreviation(pl.MainJob) + pl.MainJobLevel
+                + "/" + ProfileService.JobAbbreviation(pl.SubJob) + pl.SubJobLevel;
+
+            JobStatusRow main = _jobStats.FirstOrDefault(j => j.JobId == pl.MainJob);
+            if (pl.MainJobLevel == 99 && main != null)
+            {
+                text += main.Mastered
+                    ? "  —  Mastered (ML " + main.MasterLevel + ")"
+                    : "  —  JP " + main.SpentJobPoints + "/2100";
+            }
+
+            JobStatsText.Text = text;
+        }
+
+        private void JobInfoButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_jobsWindow != null && _jobsWindow.IsLoaded)
+            {
+                _jobsWindow.RefreshRows();
+                _jobsWindow.Activate();
+                return;
+            }
+
+            _jobsWindow = new PlayerJobsWindow(_state) { Owner = this };
+            _jobsWindow.Closed += (s, args) => _jobsWindow = null;
+            _jobsWindow.Show();
         }
 
         /// <summary>

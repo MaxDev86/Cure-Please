@@ -34,6 +34,21 @@ namespace CurePlease.Core
         public float Z { get; set; }
     }
 
+    /// <summary>One row of the local player's per-job status, from <see cref="GameStateService.GetJobStatuses"/>.</summary>
+    public sealed class JobStatusRow
+    {
+        /// <summary>Job id 1-22 (index into the joblevels array).</summary>
+        public int JobId { get; set; }
+        public int Level { get; set; }
+
+        /// <summary>True at 2100 spent job points; only meaningful when <see cref="Level"/> is 99.</summary>
+        public bool Mastered { get; set; }
+
+        /// <summary>Master level 0-50; 0 when not mastered.</summary>
+        public int MasterLevel { get; set; }
+        public int SpentJobPoints { get; set; }
+    }
+
     /// <summary>
     /// Owns the FFXI.Memory API instances (local player + optional monitored process)
     /// and produces one consistent <see cref="GameSnapshot"/> per engine tick.
@@ -693,6 +708,79 @@ namespace CurePlease.Core
             catch
             {
                 return 0;
+            }
+        }
+
+        /// <summary>
+        /// Per-job status for the local player, 22 rows keyed by job id. Level comes
+        /// from the player struct's joblevels array (player +0x7C); for level-99 jobs
+        /// the master level and spent job points are read too (mastery = 2100 spent JP,
+        /// live-verified against the in-game Master Levels list). Null when detached
+        /// or the levels read fails. Read on demand — not part of the per-tick snapshot.
+        /// </summary>
+        public virtual List<JobStatusRow> GetJobStatuses()
+        {
+            if (_pl == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                byte[] levels = _pl.Player.GetJobLevels();
+                if (levels == null)
+                {
+                    return null;
+                }
+
+                var rows = new List<JobStatusRow>(22);
+                for (int job = 1; job <= 22; job++)
+                {
+                    var row = new JobStatusRow { JobId = job, Level = job < levels.Length ? levels[job] : 0 };
+                    if (row.Level == 99)
+                    {
+                        try
+                        {
+                            row.SpentJobPoints = _pl.Player.GetJobPoints(job).SpentJobPoints;
+                            row.Mastered = row.SpentJobPoints >= 2100;
+                            row.MasterLevel = row.Mastered ? _pl.Player.GetMasterLevel(job) : 0;
+                        }
+                        catch
+                        {
+                            // JP/ML reads are best-effort; the level alone is still useful.
+                        }
+                    }
+
+                    rows.Add(row);
+                }
+
+                return rows;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>Current main/sub job ids of the local player; both 0 when detached or unreadable.</summary>
+        public virtual void GetCurrentJobs(out byte mainJob, out byte subJob)
+        {
+            mainJob = 0;
+            subJob = 0;
+            if (_pl == null)
+            {
+                return;
+            }
+
+            try
+            {
+                mainJob = _pl.Player.MainJob;
+                subJob = _pl.Player.SubJob;
+            }
+            catch
+            {
+                mainJob = 0;
+                subJob = 0;
             }
         }
 

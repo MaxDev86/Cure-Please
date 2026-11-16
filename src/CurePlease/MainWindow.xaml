@@ -38,7 +38,14 @@
         </StackPanel>
 
         <!-- Player state -->
-        <TextBlock x:Name="PlayerText" Grid.Row="2" Text="—" Margin="0,0,0,6" FontFamily="Consolas"/>
+        <StackPanel Orientation="Horizontal" Grid.Row="2" Margin="0,0,0,6">
+            <TextBlock x:Name="PlayerText" Text="—" FontFamily="Consolas" VerticalAlignment="Center"/>
+            <TextBlock x:Name="JobStatsText" Text="" FontFamily="Consolas" FontWeight="Bold"
+                       VerticalAlignment="Center" Margin="16,0,0,0"/>
+            <Button x:Name="JobInfoButton" Content="More Info…" Padding="6,0" Margin="8,0,0,0"
+                    VerticalAlignment="Center" Click="JobInfoButton_Click"
+                    ToolTip="All jobs: level, mastery, job points"/>
+        </StackPanel>
 
         <!-- Party/alliance list: slots 0-5 own party, 6-11 / 12-17 alliance parties -->
         <DataGrid x:Name="PartyGrid" Grid.Row="3" AutoGenerateColumns="False" IsReadOnly="True"
