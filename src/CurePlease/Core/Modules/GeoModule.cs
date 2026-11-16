@@ -28,6 +28,11 @@ namespace CurePlease.Core.Modules
     ///    (MP valve, pet within 9 yalms).
     ///  - Engagement gate: a named entity (EngagedTargetName) when set, else the
     ///    monitored character's status, else the local player's.
+    ///  - Enmity assist (offensive luopons only): the luopon's debuff only lands on
+    ///    enemies the GEO has hate with. The named player's target identifies the
+    ///    enemy; the assist (beneficial spell on that player, or a spell on the
+    ///    enemy itself) runs once per enemy and once per fresh bubble, before the
+    ///    placement cast.
     ///
     /// Failure handling matches the bard module: transient outcomes (not started /
     /// interrupted) retry in 3 s, genuine failures back off 15 s, and three
@@ -87,6 +92,19 @@ namespace CurePlease.Core.Modules
         /// <summary>Skip-reason dedup: reason key -> last time it was logged.</summary>
         private readonly Dictionary<string, DateTime> _skipLogged = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>Server id of the enemy the enmity assist last completed for (0 = none).</summary>
+        private uint _enmityAssistedEnemy;
+
+        /// <summary>Enemy server id + "spell|target" key of the assist offered most recently.</summary>
+        private uint _enmityPendingEnemy;
+        private string _enmityPendingKey;
+
+        /// <summary>Set when a fresh offensive luopon lands — run the assist once more for this enemy.</summary>
+        private bool _enmityRearm;
+
+        /// <summary>Last completed assist time (drives the optional refresh interval).</summary>
+        private DateTime _enmityLastRun = DateTime.MinValue;
+
         private static readonly TimeSpan SkipLogInterval = TimeSpan.FromSeconds(30);
 
         /// <summary>Optional diagnostic output (why a configured spell is NOT being cast). Wired by the UI.</summary>
@@ -114,6 +132,47 @@ namespace CurePlease.Core.Modules
         }
 
         public string Name => "Geomancer";
+
+        /// <summary>Zoning despawns the luopon and strips Indi- — drop all tracking.</summary>
+        public void OnZoneChanged()
+        {
+            _lastAttempt.Clear();
+            _shortRetry.Clear();
+            _failures.Clear();
+            _jaAttempted.Clear();
+            _enmityAssistedEnemy = 0;
+            _enmityPendingEnemy = 0;
+            _enmityPendingKey = null;
+            _enmityRearm = false;
+            _enmityLastRun = DateTime.MinValue;
+        }
+
+        /// <summary>
+        /// Colure suffixes in the legacy GeomancerInfo (geo_position) order — every
+        /// colure exists as both an Indi- and a Geo- spell. Shared by the settings
+        /// UI dropdowns and the legacy importer's index table.
+        /// </summary>
+        public static readonly IReadOnlyList<string> KnownColureSuffixes = new[]
+        {
+            "Voidance", "Precision", "Regen", "Haste", "Attunement", "Focus", "Barrier", "Refresh",
+            "CHR", "MND", "Fury", "INT", "AGI", "Fend", "VIT", "DEX", "Acumen", "STR",
+            "Poison", "Slow", "Torpor", "Slip", "Languor", "Paralysis", "Vex", "Frailty",
+            "Wilt", "Malaise", "Gravity", "Fade",
+        };
+
+        public static readonly IReadOnlyList<string> KnownIndiSpells = WithPrefix("Indi-");
+        public static readonly IReadOnlyList<string> KnownGeoSpells = WithPrefix("Geo-");
+
+        private static IReadOnlyList<string> WithPrefix(string prefix)
+        {
+            var list = new List<string>(KnownColureSuffixes.Count);
+            foreach (string suffix in KnownColureSuffixes)
+            {
+                list.Add(prefix + suffix);
+            }
+
+            return list;
+        }
 
         public void AddCandidates(GameSnapshot snapshot, CurePleaseSettings settings, List<ActionCandidate> candidates)
         {
@@ -159,7 +218,14 @@ namespace CurePlease.Core.Modules
                 return;
             }
 
-            // 3. Luopan placement.
+            // 3. Enmity assist: an offensive luopon's debuff only lands on enemies the
+            //    GEO has hate with. Offered BEFORE placement so the first pulse works.
+            if (TryOfferEnmityAssist(snapshot, geo, score, candidates))
+            {
+                return; // the bubble cast follows next tick
+            }
+
+            // 4. Luopan placement.
             if (!luopanUp && engaged)
             {
                 if (geo.UseBlazeOfGlory)
@@ -189,7 +255,7 @@ namespace CurePlease.Core.Modules
                 return;
             }
 
-            // 4. Luopan management while one is up.
+            // 5. Luopan management while one is up.
             if (luopanUp)
             {
                 AddLuopanManagement(snapshot, geo, pl, engaged, score, candidates);
@@ -257,7 +323,7 @@ namespace CurePlease.Core.Modules
 
             if (!string.IsNullOrWhiteSpace(geo.EngagedTargetName))
             {
-                EntityInfo entity = _state.FindEntityByName(geo.EngagedTargetName);
+                EntityInfo entity = FindEngagedEnemy(geo) ?? FindAnyEnemy(geo);
                 if (entity != null)
                 {
                     anchorIndex = entity.Index;
@@ -286,8 +352,7 @@ namespace CurePlease.Core.Modules
         {
             if (!string.IsNullOrWhiteSpace(geo.EngagedTargetName))
             {
-                EntityInfo entity = _state.FindEntityByName(geo.EngagedTargetName);
-                return entity != null && entity.Status == (uint)EntityStatus.Engaged;
+                return FindEngagedEnemy(geo) != null;
             }
 
             if (!string.IsNullOrEmpty(snapshot.MonitoredName))
@@ -296,6 +361,60 @@ namespace CurePlease.Core.Modules
             }
 
             return snapshot.Player.EntityStatus == EntityStatus.Engaged;
+        }
+
+        /// <summary>
+        /// EngagedTargetName is a ";"- or ","-delimited list. Returns the first
+        /// ENGAGED entity among them (null when none) — used for the engagement
+        /// check, the offensive luopan target and the Full Circle anchor.
+        /// </summary>
+        private EntityInfo FindEngagedEnemy(GeoSettings geo)
+        {
+            EntityInfo first = null;
+            foreach (string name in EnemyNames(geo))
+            {
+                EntityInfo entity = _state.FindEntityByName(name);
+                if (entity == null)
+                {
+                    continue;
+                }
+
+                if (entity.Status == (uint)EntityStatus.Engaged)
+                {
+                    return entity;
+                }
+
+                first = first ?? entity;
+            }
+
+            return null;
+        }
+
+        /// <summary>First listed enemy that exists at all (fallback anchor; null when none found).</summary>
+        private EntityInfo FindAnyEnemy(GeoSettings geo)
+        {
+            foreach (string name in EnemyNames(geo))
+            {
+                EntityInfo entity = _state.FindEntityByName(name);
+                if (entity != null)
+                {
+                    return entity;
+                }
+            }
+
+            return null;
+        }
+
+        private static IEnumerable<string> EnemyNames(GeoSettings geo)
+        {
+            foreach (string part in geo.EngagedTargetName.Split(new[] { ';', ',', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string name = part.Trim();
+                if (name.Length > 0)
+                {
+                    yield return name;
+                }
+            }
         }
 
         /// <summary>
@@ -331,8 +450,17 @@ namespace CurePlease.Core.Modules
 
             if (!string.IsNullOrWhiteSpace(geo.EngagedTargetName))
             {
-                targetName = geo.EngagedTargetName.Trim();
-                return true;
+                // Cast at the engaged enemy from the list (first listed when none
+                // show engaged — placement is gated on engagement anyway).
+                EntityInfo enemy = FindEngagedEnemy(geo) ?? FindAnyEnemy(geo);
+                if (enemy != null)
+                {
+                    targetName = enemy.Name;
+                    return true;
+                }
+
+                reason = "none of the engaged enemy names are spawned";
+                return false;
             }
 
             if (snapshot.Player.EntityStatus == EntityStatus.Engaged && snapshot.TargetId != 0)
@@ -345,19 +473,87 @@ namespace CurePlease.Core.Modules
             return false;
         }
 
+        /// <summary>
+        /// Enmity assist (docs: the luopon's debuff only lands on enemies the GEO has
+        /// hate with). The NAMED player's target identifies the current enemy — never
+        /// the monitored character, which is often the PL itself. Party mode casts a
+        /// beneficial spell on that player; enemy mode casts on the enemy by name.
+        /// Runs once per enemy, once per fresh bubble placement, and optionally on a
+        /// refresh interval — hate cannot be read back, so probes are cheap and bounded.
+        /// True when an assist candidate was offered (caller holds the bubble cast).
+        /// </summary>
+        private bool TryOfferEnmityAssist(GameSnapshot snapshot, GeoSettings geo, double score, List<ActionCandidate> candidates)
+        {
+            if (!geo.EnmityAssist || string.IsNullOrWhiteSpace(geo.EnmityPlayerName)
+                || string.IsNullOrWhiteSpace(geo.EnmitySpell))
+            {
+                return false;
+            }
+
+            // Only meaningful alongside an offensive bubble.
+            if (!geo.LuopanEnabled || string.IsNullOrWhiteSpace(geo.GeoSpell))
+            {
+                return false;
+            }
+
+            EliteAPI.ISpell geoSpell = _state.FindSpell(geo.GeoSpell);
+            if (geoSpell == null || (geoSpell.ValidTargets & 32) == 0)
+            {
+                return false;
+            }
+
+            EntityInfo watcher = _state.FindEntityByName(geo.EnmityPlayerName.Trim());
+            if (watcher == null || watcher.Status != (uint)EntityStatus.Engaged || watcher.TargetIndex == 0)
+            {
+                return false;
+            }
+
+            EntityInfo enemy = _state.FindEntityByIndex(watcher.TargetIndex);
+            if (enemy == null || enemy.ServerId == 0)
+            {
+                return false;
+            }
+
+            bool refreshDue = geo.EnmityRefreshSeconds > 0
+                && DateTime.UtcNow - _enmityLastRun > TimeSpan.FromSeconds(geo.EnmityRefreshSeconds);
+
+            if (!_enmityRearm && !refreshDue && enemy.ServerId == _enmityAssistedEnemy)
+            {
+                return false; // already assisted for this enemy
+            }
+
+            string target = geo.EnmityCastOnEnemy ? enemy.Name : watcher.Name;
+            string spellName = geo.EnmitySpell.Trim();
+            if (_enmityRearm)
+            {
+                // A deliberate re-probe after a fresh bubble bypasses the failure
+                // backoff (which would otherwise swallow it for 15 s).
+                _lastAttempt.Remove(spellName + "|" + target);
+            }
+
+            if (!OfferSpell(spellName, target, score + 6, "enmity assist", candidates))
+            {
+                return false; // backoff/disabled — let the bubble proceed without it
+            }
+
+            _enmityPendingEnemy = enemy.ServerId;
+            _enmityPendingKey = spellName + "|" + target;
+            return true;
+        }
+
         /// <summary>Offers a spell candidate when it is castable, offered at most per backoff rules.</summary>
-        private void OfferSpell(string spellName, string targetName, double score, string what, List<ActionCandidate> candidates)
+        private bool OfferSpell(string spellName, string targetName, double score, string what, List<ActionCandidate> candidates)
         {
             string key = spellName + "|" + targetName;
             if (OnBackoff(key) || IsDisabled(key))
             {
-                return;
+                return false;
             }
 
             if (!IsCastable(spellName, out string reason))
             {
                 LogSkip("cast|" + key, "Geo: skipping \"" + spellName + "\" (" + what + ") — " + reason);
-                return;
+                return false;
             }
 
             candidates.Add(new ActionCandidate
@@ -368,6 +564,7 @@ namespace CurePlease.Core.Modules
                 TargetName = targetName,
                 Description = spellName + " -> " + targetName + " (" + what + ")",
             });
+            return true;
         }
 
         private bool IsCastable(string spellName, out string reason)
@@ -488,6 +685,25 @@ namespace CurePlease.Core.Modules
 
             _lastAttempt[key] = DateTime.UtcNow;
             _failures.Remove(key);
+
+            // Enmity assist bookkeeping: a completed assist marks this enemy as
+            // handled; a fresh offensive luopon re-arms one assist for the enemy.
+            if (_enmityPendingKey != null && key.Equals(_enmityPendingKey, StringComparison.OrdinalIgnoreCase))
+            {
+                _enmityAssistedEnemy = _enmityPendingEnemy;
+                _enmityLastRun = DateTime.UtcNow;
+                _enmityRearm = false;
+                _enmityPendingKey = null;
+            }
+
+            if (candidate.ActionName.StartsWith("Geo-", StringComparison.OrdinalIgnoreCase))
+            {
+                EliteAPI.ISpell placed = _state.FindSpell(candidate.ActionName);
+                if (placed != null && (placed.ValidTargets & 32) != 0)
+                {
+                    _enmityRearm = true;
+                }
+            }
         }
 
         private bool OnBackoff(string key)

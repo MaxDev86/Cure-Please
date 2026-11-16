@@ -203,6 +203,27 @@ namespace CurePlease.Core.Modules
 
         public string Name => "Bard";
 
+        /// <summary>
+        /// Zoning wipes all songs (legacy: song_casting = 0 + ForceSongRecast).
+        /// Clearing the tracking makes every configured song missing again, which
+        /// re-engages the cold-start pass for the rebuild.
+        /// </summary>
+        public void OnZoneChanged()
+        {
+            _sung.Clear();
+            _lastAttempt.Clear();
+            _shortRetry.Clear();
+            _failures.Clear();
+            _jaAttempted.Clear();
+            _pending.Clear();
+            _enemySongs.Clear();
+            _landings.Clear();
+            _lastSongFamily = 0;
+            _lastSongCastUtc = DateTime.MinValue;
+            _coldStartPass = false;
+            _coldStartDummiesDone = false;
+        }
+
         public void AddCandidates(GameSnapshot snapshot, CurePleaseSettings settings, List<ActionCandidate> candidates)
         {
             BardSettings bard = settings.Bard;
@@ -1188,6 +1209,10 @@ namespace CurePlease.Core.Modules
         };
 
         private const int MarsyasItemId = 21398;
+
+        /// <summary>Distinct known instrument names, for the settings UI pickers.</summary>
+        public static readonly IReadOnlyList<string> KnownInstrumentNames =
+            Instruments.Select(i => i.Name).Distinct().ToList();
 
         /// <summary>
         /// Resolves the slot count and instrument-gated song availability. A declared

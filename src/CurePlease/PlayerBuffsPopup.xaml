@@ -1,0 +1,19 @@
+<Window x:Class="CurePlease.PlayerBuffsPopup"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Player Buffs" SizeToContent="WidthAndHeight" MinWidth="320" MaxHeight="560"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <TextBlock x:Name="HeaderText" FontWeight="Bold" FontSize="13"/>
+        <TextBlock Grid.Row="1" Text="Session-only — assignments are cleared on attach and never saved to the profile."
+                   TextWrapping="Wrap" Foreground="Gray" Margin="0,2,0,6"/>
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+            <ItemsControl x:Name="BuffList"/>
+        </ScrollViewer>
+    </Grid>
+</Window>
