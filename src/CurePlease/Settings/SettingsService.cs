@@ -109,6 +109,10 @@ namespace CurePlease.Settings
                 settings.Version = 1;
             }
 
+            // JSON load replaces Entries wholesale; re-add catalog spells introduced
+            // after the profile was written.
+            settings.Buffs.EnsureSeeded();
+
             // Future: if (settings.Version < 2) { ... settings.Version = 2; }
         }
     }

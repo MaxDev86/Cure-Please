@@ -1,0 +1,72 @@
+<UserControl x:Class="CurePlease.Settings.Pages.DebuffsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Margin="12">
+
+        <TextBlock Text="Debuff removal" FontWeight="Bold" FontSize="14"/>
+        <TextBlock Text="Applies to any job with -na/Erase spells (WHM, SCH, RDM, or a suitable sub job). Checked debuffs are removed with the listed spell. Removal severity competes with cures by score, so Doom outranks a medium cure."
+                   TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,6"/>
+        <CheckBox Content="Enable debuff removal"
+                  IsChecked="{Binding Settings.Debuffs.Enabled, UpdateSourceTrigger=PropertyChanged}"/>
+        <CheckBox Content="Divine Caress before a removal — the cured target also gains immunity (WHM job ability)"
+                  IsChecked="{Binding Settings.Debuffs.UseDivineCaress, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0"/>
+
+        <!-- Group removals -->
+        <TextBlock Text="Group removals (AoE)" FontWeight="Bold" Margin="0,14,0,4"/>
+        <TextBlock Text="When enough members share the same ailment, one cast clears them all. Yagrush is used for free when equipped (always-on Divine Veil — no job ability spent); otherwise the checked preps are tried in order. On SCH main, -na/Erase spells also need Addendum: White up (see the Scholar page). Divine Seal needs WHM main 50+ (the Divine Veil trait — /WHM is not enough) and shares its 10-minute recast with the critical-cure option on the Healing page."
+                   TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,6"/>
+        <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+            <TextBlock Text="Group when at least" VerticalAlignment="Center"/>
+            <TextBox Text="{Binding Settings.Debuffs.GroupRemovalMinCount, UpdateSourceTrigger=PropertyChanged}" Width="40" Margin="6,0,6,0"/>
+            <TextBlock Text="members share an ailment (below 2 = off)" VerticalAlignment="Center"/>
+        </StackPanel>
+        <CheckBox Content="Accession (SCH main or sub — 1 stratagem charge per group)"
+                  IsChecked="{Binding Settings.Debuffs.GroupRemovalUseAccession, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0"/>
+        <CheckBox Content="Divine Seal (WHM main 50+ — free, but a 10-minute recast)"
+                  IsChecked="{Binding Settings.Debuffs.GroupRemovalUseDivineSeal, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0"/>
+
+        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+            <CheckBox Content="Wake sleeping party members with"
+                      IsChecked="{Binding Settings.Debuffs.WakeSleepEnabled, UpdateSourceTrigger=PropertyChanged}"
+                      VerticalAlignment="Center"/>
+            <ComboBox ItemsSource="{Binding WakeSleepSpells}"
+                      SelectedItem="{Binding Settings.Debuffs.WakeSleepSpell, UpdateSourceTrigger=PropertyChanged}"
+                      Width="90" Margin="6,0,0,0"/>
+            <TextBlock Text="(Sleep/Sleep2 — never used on the PL; a sleeping PL cannot cast)"
+                       Foreground="Gray" VerticalAlignment="Center" Margin="6,0,0,0"/>
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+            <CheckBox Content="When the PL is silenced, use"
+                      IsChecked="{Binding Settings.Debuffs.PlSilenceItemEnabled, UpdateSourceTrigger=PropertyChanged}"
+                      VerticalAlignment="Center"/>
+            <ComboBox ItemsSource="{Binding SilenceItems}"
+                      SelectedItem="{Binding Settings.Debuffs.PlSilenceItem, UpdateSourceTrigger=PropertyChanged}"
+                      Width="120" Margin="6,0,0,0"/>
+            <TextBlock Text="(only if in inventory; Mute can not be removed)"
+                       Foreground="Gray" VerticalAlignment="Center" Margin="6,0,0,0"/>
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+            <CheckBox Content="When the PL is doomed, use"
+                      IsChecked="{Binding Settings.Debuffs.PlDoomItemEnabled, UpdateSourceTrigger=PropertyChanged}"
+                      VerticalAlignment="Center"/>
+            <ComboBox ItemsSource="{Binding DoomItems}"
+                      SelectedItem="{Binding Settings.Debuffs.PlDoomItem, UpdateSourceTrigger=PropertyChanged}"
+                      Width="120" Margin="6,0,0,0"/>
+            <TextBlock Text="(only if in inventory; for when Cursna is not trusted)"
+                       Foreground="Gray" VerticalAlignment="Center" Margin="6,0,0,0"/>
+        </StackPanel>
+
+        <DataGrid ItemsSource="{Binding DebuffRemovals}" AutoGenerateColumns="False"
+                  CanUserAddRows="False" CanUserDeleteRows="False" HeadersVisibility="Column"
+                  Height="280" Margin="0,8,0,0">
+            <DataGrid.Columns>
+                <DataGridCheckBoxColumn Header="Remove" Binding="{Binding IsChecked, UpdateSourceTrigger=PropertyChanged}" Width="60"/>
+                <DataGridTextColumn Header="Debuff" Binding="{Binding DisplayName}" IsReadOnly="True" Width="*"/>
+                <DataGridTextColumn Header="Removal" Binding="{Binding Spell}" IsReadOnly="True" Width="*"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+    </StackPanel>
+</UserControl>

@@ -1,0 +1,128 @@
+<UserControl x:Class="CurePlease.Settings.Pages.GeomancyPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:core="clr-namespace:CurePlease.Core.Modules"
+             xmlns:core2="clr-namespace:CurePlease.Core">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="12">
+
+            <CheckBox Content="Enable Geomancer support (main or sub job GEO)"
+                      IsChecked="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}"
+                      FontWeight="Bold"/>
+
+            <!-- Indicolure -->
+            <TextBlock Text="Indicolure (aura on yourself)" FontWeight="Bold" Margin="0,14,0,4"/>
+            <TextBlock Text="Presence-tracked via the Colure Active buff — re-cast immediately when it drops, never on a timer. Leave the spell empty for no Indi upkeep."
+                       TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,6"/>
+            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                <TextBlock Text="Indi spell:" VerticalAlignment="Center" Width="170"/>
+                <ComboBox SelectedItem="{Binding IndiSpell, UpdateSourceTrigger=PropertyChanged}"
+                          ItemsSource="{Binding Source={x:Static core:GeoModule.KnownIndiSpells}}" IsEditable="True"
+                          Width="160"/>
+            </StackPanel>
+            <CheckBox Content="Only (re)cast while engaged"
+                      IsChecked="{Binding IndiOnlyWhenEngaged, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0"/>
+
+            <!-- Luopan -->
+            <TextBlock Text="Luopan" FontWeight="Bold" Margin="0,14,0,4"/>
+            <TextBlock Text="Placed on the target below and re-cast when it dies or is reclaimed. A luopan is your pet, so its HP and position are always readable."
+                       TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,6"/>
+            <CheckBox Content="Place and manage a luopan"
+                      IsChecked="{Binding LuopanEnabled, UpdateSourceTrigger=PropertyChanged}"/>
+            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                <TextBlock Text="Geo spell:" VerticalAlignment="Center" Width="170"/>
+                <ComboBox SelectedItem="{Binding GeoSpell, UpdateSourceTrigger=PropertyChanged}"
+                          ItemsSource="{Binding Source={x:Static core:GeoModule.KnownGeoSpells}}" IsEditable="True"
+                          Width="160"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                <TextBlock Text="Center beneficial luopan on:" VerticalAlignment="Center" Width="170"/>
+                <TextBox Text="{Binding LuopanTarget, UpdateSourceTrigger=PropertyChanged}" Width="160"/>
+                <TextBlock Text="Blank = monitored character, else yourself."
+                           VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                <TextBlock Text="Engaged enemy name:" VerticalAlignment="Center" Width="170"/>
+                <TextBox Text="{Binding EngagedTargetName, UpdateSourceTrigger=PropertyChanged}"
+                         Width="160" AcceptsReturn="True" MinHeight="22" VerticalContentAlignment="Top"/>
+                <TextBlock Text="Engagement check + offensive luopan target (the engaged one is used). Separate multiple enemies with ; , or a new line — blank = monitored/local engagement."
+                           VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray" TextWrapping="Wrap" MaxWidth="380"/>
+            </StackPanel>
+
+            <!-- Luopan management -->
+            <TextBlock Text="Luopan management" FontWeight="Bold" Margin="0,14,0,4"/>
+            <CheckBox Content="Blaze of Glory before placing (luopan gets halved HP)"
+                      IsChecked="{Binding UseBlazeOfGlory, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0"/>
+            <CheckBox Content="Ecliptic Attrition on a healthy luopan (stronger effect, drains faster)"
+                      IsChecked="{Binding UseEclipticAttrition, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0"/>
+            <CheckBox Content="Dematerialize on a healthy luopan (luopan avoids damage)"
+                      IsChecked="{Binding UseDematerialize, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0"/>
+            <CheckBox Content="Life Cycle when the luopan is weak (5–30% HP, you are at 90%+)"
+                      IsChecked="{Binding UseLifeCycle, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0"/>
+            <CheckBox Content="Full Circle a luopan that ended up 10+ yalms from the fight, then re-drop it"
+                      IsChecked="{Binding UseFullCircle, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0"/>
+
+            <!-- Entrust -->
+            <TextBlock Text="Entrust" FontWeight="Bold" Margin="0,14,0,4"/>
+            <TextBlock Text="Entrust makes the next Indicolure single-target on the chosen character; it fires exactly once per Entrust."
+                       TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,6"/>
+            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                <CheckBox Content="Use Entrust with Indi spell:"
+                          IsChecked="{Binding UseEntrust, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center"/>
+                <ComboBox SelectedItem="{Binding EntrustSpell, UpdateSourceTrigger=PropertyChanged}"
+                          ItemsSource="{Binding Source={x:Static core:GeoModule.KnownIndiSpells}}" IsEditable="True"
+                          Width="160" Margin="8,0,0,0"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                <TextBlock Text="Entrust target:" VerticalAlignment="Center" Width="170"/>
+                <TextBox Text="{Binding EntrustTarget, UpdateSourceTrigger=PropertyChanged}" Width="160"/>
+                <TextBlock Text="Blank = monitored character."
+                           VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray"/>
+            </StackPanel>
+
+            <!-- Enmity assist -->
+            <TextBlock Text="Enmity for offensive luopons" FontWeight="Bold" Margin="0,14,0,4"/>
+            <TextBlock Text="An offensive luopon's debuff only lands on enemies you have hate with. The named player's target identifies the enemy — do NOT rely on the monitored character here, PL and monitored are often the same character (use the tank's name). The spell runs once per enemy and once per fresh bubble, before the placement cast."
+                       TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,6"/>
+            <CheckBox Content="Establish hate for offensive luopons"
+                      IsChecked="{Binding EnmityAssist, UpdateSourceTrigger=PropertyChanged}"/>
+            <TextBlock Text="Player whose target is the enemy (the tank or DD, e.g. Bazek; also receives the spell in party mode):"
+                       Margin="0,4,0,0"/>
+            <TextBox Text="{Binding EnmityPlayerName, UpdateSourceTrigger=PropertyChanged}"
+                     Width="160" HorizontalAlignment="Left" Margin="0,2,0,0"/>
+            <CheckBox Content="Cast the hate spell on the enemy itself instead of on that player"
+                      IsChecked="{Binding EnmityCastOnEnemy, UpdateSourceTrigger=PropertyChanged}"
+                      Click="EnmityFilterChanged" Margin="0,4,0,0"/>
+            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                <TextBlock Text="Sub job filter:" VerticalAlignment="Center" Width="170"/>
+                <ComboBox ItemsSource="{Binding Source={x:Static core2:EnmitySpellCatalog.JobNames}}"
+                          SelectedIndex="{Binding EnmitySubJobId, UpdateSourceTrigger=PropertyChanged}"
+                          SelectionChanged="EnmityFilterChanged" Width="90"/>
+                <TextBlock Text="&quot;Any&quot; lists every sub-job-obtainable spell."
+                           VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                <TextBlock Text="Hate spell:" VerticalAlignment="Center" Width="170"/>
+                <ComboBox x:Name="EnmitySpellCombo" IsEditable="True"
+                          SelectionChanged="EnmitySpellChanged" Width="160"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                <TextBlock Text="Re-probe every (seconds):" VerticalAlignment="Center" Width="170"/>
+                <TextBox Text="{Binding EnmityRefreshSeconds, UpdateSourceTrigger=PropertyChanged}" Width="70"/>
+                <TextBlock Text="0 = once per enemy only (plus once per fresh bubble)."
+                           VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray"/>
+            </StackPanel>
+
+            <!-- Radial Arcana -->
+            <TextBlock Text="Radial Arcana" FontWeight="Bold" Margin="0,14,0,4"/>
+            <TextBlock Text="Consumes the luopan to restore MP (the luopan must be up and within 9 yalms)."
+                       TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,6"/>
+            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                <CheckBox Content="Use Radial Arcana when MP at or below:"
+                          IsChecked="{Binding UseRadialArcana, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center"/>
+                <TextBox Text="{Binding RadialArcanaMpBelow, UpdateSourceTrigger=PropertyChanged}" Width="70" Margin="8,0,0,0"/>
+            </StackPanel>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

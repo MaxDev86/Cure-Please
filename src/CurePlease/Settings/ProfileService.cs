@@ -13,10 +13,12 @@ namespace CurePlease.Settings
     /// optional character prefix (<c>Alternate_BRD_NIN.json</c>) for per-character
     /// overrides — the same scheme legacy used for its XML files.
     ///
-    /// The engine reads the player's job every tick, so a /job change or a login on
-    /// another character hot-swaps the profile: character-specific file first, then
-    /// the job-combo file; when neither exists the current settings stay active.
-    /// <c>default.json</c> is the fallback profile loaded at startup.
+    /// The UI reads the player's job every snapshot, so a /job change or a login on
+    /// another character can hot-swap the profile: character-specific file first,
+    /// then the job-combo file. This is controlled by <see cref="AutoSwitchEnabled"/>;
+    /// when off, the current profile stays active and a matching candidate is only
+    /// reported through <see cref="SwitchSuppressed"/>. When no profile matches, the
+    /// current settings stay active. <c>default.json</c> loads at startup.
     /// </summary>
     public sealed class ProfileService
     {
@@ -55,6 +57,21 @@ namespace CurePlease.Settings
         /// <summary>Raised with the profile name after a switch.</summary>
         public event Action<string> ProfileSwitched;
 
+        /// <summary>
+        /// When false, <see cref="ConsiderSnapshot"/> never switches profiles — a
+        /// manually picked profile stays active across job/character changes and
+        /// <see cref="SwitchSuppressed"/> is raised instead. Mirrors the global
+        /// AutoSwitchProfiles preference (default true = legacy behavior).
+        /// </summary>
+        public bool AutoSwitchEnabled { get; set; } = true;
+
+        /// <summary>
+        /// Raised with the profile name that WOULD have been activated when
+        /// auto-switch is off and the job context changes to one with a different
+        /// matching profile. For the UI to log so a stale profile is never silent.
+        /// </summary>
+        public event Action<string> SwitchSuppressed;
+
         public static string JobAbbreviation(byte jobId)
         {
             return jobId < JobAbbreviations.Length && JobAbbreviations[jobId].Length > 0
@@ -86,6 +103,59 @@ namespace CurePlease.Settings
 
             string character = Sanitize(characterName);
             return character.Length == 0 ? combo : character + "_" + combo;
+        }
+
+        /// <summary>
+        /// Recovers the job combo encoded in a profile name — the trailing JOB or
+        /// JOB_JOB tokens ("Alternate_WHM_SCH" -> WHM/SCH). FFXI character names are
+        /// letters-only and job abbreviations are compared case-sensitively, so a
+        /// leading non-abbreviation token is a character prefix. False when no combo
+        /// can be read (e.g. "default" or a hand-named profile) — callers must fail
+        /// open (show everything) in that case.
+        /// </summary>
+        public static bool TryComboFromProfileName(string profileName, out byte mainJob, out byte subJob)
+        {
+            mainJob = 0;
+            subJob = 0;
+            if (string.IsNullOrWhiteSpace(profileName))
+            {
+                return false;
+            }
+
+            string[] tokens = profileName.Trim().Split('_');
+            byte last = JobIdFromAbbreviation(tokens[tokens.Length - 1]);
+            if (last == 0)
+            {
+                return false;
+            }
+
+            if (tokens.Length >= 2)
+            {
+                byte previous = JobIdFromAbbreviation(tokens[tokens.Length - 2]);
+                if (previous != 0)
+                {
+                    mainJob = previous;
+                    subJob = last;
+                    return true;
+                }
+            }
+
+            mainJob = last;
+            return true;
+        }
+
+        /// <summary>Inverse of <see cref="JobAbbreviation"/>; 0 when the token is not a job abbreviation.</summary>
+        private static byte JobIdFromAbbreviation(string token)
+        {
+            for (byte i = 1; i < JobAbbreviations.Length; i++)
+            {
+                if (JobAbbreviations[i].Equals(token, StringComparison.Ordinal))
+                {
+                    return i;
+                }
+            }
+
+            return 0;
         }
 
         public IReadOnlyList<string> ListProfiles()
@@ -122,22 +192,38 @@ namespace CurePlease.Settings
 
             _lastContextKey = contextKey;
 
+            string candidate = FindProfileFor(player);
+            if (candidate == null)
+            {
+                return false;
+            }
+
+            if (!AutoSwitchEnabled)
+            {
+                if (!candidate.Equals(ActiveName, StringComparison.OrdinalIgnoreCase))
+                {
+                    SwitchSuppressed?.Invoke(candidate);
+                }
+
+                return false;
+            }
+
+            SwitchTo(candidate);
+            return true;
+        }
+
+        /// <summary>Character-specific file first, then the job-combo file; null when neither exists.</summary>
+        private string FindProfileFor(PlayerState player)
+        {
             string characterSpecific = ProfileNameFor(player.Name, player.MainJob, player.SubJob);
             if (characterSpecific != null && !characterSpecific.Equals(ComboNameFor(player.MainJob, player.SubJob), StringComparison.OrdinalIgnoreCase)
                 && File.Exists(PathFor(characterSpecific)))
             {
-                SwitchTo(characterSpecific);
-                return true;
+                return characterSpecific;
             }
 
             string combo = ComboNameFor(player.MainJob, player.SubJob);
-            if (combo != null && File.Exists(PathFor(combo)))
-            {
-                SwitchTo(combo);
-                return true;
-            }
-
-            return false;
+            return combo != null && File.Exists(PathFor(combo)) ? combo : null;
         }
 
         /// <summary>Loads a profile by name and makes it the active one. False when the file does not exist.

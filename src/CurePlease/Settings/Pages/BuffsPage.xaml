@@ -1,0 +1,54 @@
+<UserControl x:Class="CurePlease.Settings.Pages.BuffsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Margin="12">
+
+        <TextBlock Text="Buff upkeep (PL only)" FontWeight="Bold" FontSize="14"/>
+        <TextBlock Text="Buffs kept on the character running Cure Please. One row per buff line — pick the exact spell in the dropdown. The engine skips whatever the current job combo cannot cast. Presence is read live from your own buffs, so a dispelled or worn buff is recast immediately; the minutes are only a fallback (stock duration — raise it for gear/Composure builds)."
+                   TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,4"/>
+        <TextBlock Text="Accession (SCH main or sub): preps before the cast so the self-cast also lands on party members in range — no per-member range check. Perpetuance (SCH main): preps before the cast and extends the duration — only for spells an SCH main can cast (multiplier on the Scholar page). Bar-element, bar-status, enspell and storm buffs are mutually exclusive; the engine will not overwrite one with another. Only one Gain-*, one Boost-*, one enspell, one storm, one Protect row (single OR -ra), one Shell row (single OR -ra), one bar-element row (single OR -ra) and one bar-status row (single OR -ra) can be enabled at a time."
+                   TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,8"/>
+
+        <DataGrid ItemsSource="{Binding Rows}" Height="380"
+                  AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                  SelectionMode="Single" SelectionUnit="FullRow"
+                  HeadersVisibility="Column" GridLinesVisibility="Horizontal">
+            <DataGrid.Columns>
+                <DataGridCheckBoxColumn Header="On" Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" Width="36"/>
+                <DataGridTextColumn Header="Buff" Binding="{Binding Group}" IsReadOnly="True" Width="120"/>
+                <DataGridTemplateColumn Header="Spell" Width="130">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <ComboBox ItemsSource="{Binding Spells}"
+                                      SelectedItem="{Binding SelectedSpell, UpdateSourceTrigger=PropertyChanged}"
+                                      IsEnabled="{Binding HasChoices}"
+                                      VerticalAlignment="Center"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Min" Binding="{Binding DurationMinutes, UpdateSourceTrigger=PropertyChanged}" Width="46"/>
+                <DataGridTemplateColumn Header="Accession" Width="70">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <CheckBox IsChecked="{Binding UseAccession, UpdateSourceTrigger=PropertyChanged}"
+                                      IsEnabled="{Binding AccessionCompatible}"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Perpetuance" Width="80">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <CheckBox IsChecked="{Binding UsePerpetuance, UpdateSourceTrigger=PropertyChanged}"
+                                      IsEnabled="{Binding PerpetuanceCompatible}"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Exclusivity" Binding="{Binding FamilyLabel}" IsReadOnly="True" Width="100"/>
+                <DataGridTextColumn Header="Notes" Binding="{Binding Notes}" IsReadOnly="True" Width="*"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+    </StackPanel>
+</UserControl>

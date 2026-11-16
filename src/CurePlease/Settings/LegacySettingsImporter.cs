@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Xml.Linq;
+using CurePlease.Core;
 
 namespace CurePlease.Settings
 {
@@ -77,44 +78,79 @@ namespace CurePlease.Settings
             settings.Cures.Overcure = GetBool(values, "Overcure", ref mapped);
             settings.Cures.OvercureOnHighPriority = GetBool(values, "OvercureOnHighPriority", ref mapped);
 
+            // Legacy fired Divine Seal by the PL's MP; here it doubles critical cures.
+            settings.Cures.UseDivineSeal = GetBool(values, "divineSeal", ref mapped);
+
             // --- General ---
             settings.General.EnableOutOfPartyHealing = GetBool(values, "enableOutOfPartyHealing", ref mapped);
 
-            // --- Buff upkeep intervals and spell tiers ---
-            settings.Buffs.AutoHasteMinutes = GetDouble(values, "autoHasteMinutes", ref mapped);
-            settings.Buffs.AutoProtectMinutes = GetDouble(values, "autoProtect_Minutes", ref mapped);
-            settings.Buffs.AutoShellMinutes = GetDouble(values, "autoShellMinutes", ref mapped);
-
+            // --- Buff upkeep: tier + interval per spell, mapped onto catalog entries ---
+            // Legacy stored no enable flags for these (the per-slot checkboxes were
+            // runtime-only arrays), so entries keep their defaults (disabled) and the
+            // report tells the user to switch on the rows they want.
             string[] protectTiers = { "Protect", "Protect II", "Protect III", "Protect IV", "Protect V" };
             string[] shellTiers = { "Shell", "Shell II", "Shell III", "Shell IV", "Shell V" };
-            int protectIdx = GetInt(values, "autoProtect_Spell", ref mapped);
-            int shellIdx = GetInt(values, "autoShell_Spell", ref mapped);
-            if (protectIdx >= 0 && protectIdx < protectTiers.Length)
+            string[] refreshTiers = { "Refresh", "Refresh II", "Refresh III" };
+            string[] regenTiers = { "Regen", "Regen II", "Regen III", "Regen IV", "Regen V" };
+            string[] stormTiers =
             {
-                settings.Buffs.ProtectSpell = protectTiers[protectIdx];
-            }
+                "Firestorm", "Sandstorm", "Rainstorm", "Windstorm",
+                "Hailstorm", "Thunderstorm", "Voidstorm", "Aurorastorm",
+                "Firestorm II", "Sandstorm II", "Rainstorm II", "Windstorm II",
+                "Hailstorm II", "Thunderstorm II", "Voidstorm II", "Aurorastorm II",
+            };
 
-            if (shellIdx >= 0 && shellIdx < shellTiers.Length)
-            {
-                settings.Buffs.ShellSpell = shellTiers[shellIdx];
-            }
+            double hasteMinutes = GetDouble(values, "autoHasteMinutes", ref mapped);
+            double protectMinutes = GetDouble(values, "autoProtect_Minutes", ref mapped);
+            double shellMinutes = GetDouble(values, "autoShellMinutes", ref mapped);
+            double refreshMinutes = GetDouble(values, "autoRefresh_Minutes", ref mapped);
+            double regenMinutes = GetDouble(values, "autoRegen_Minutes", ref mapped);
+            double adloquiumMinutes = GetDouble(values, "autoAdloquiumMinutes", ref mapped);
+            double phalanxMinutes = GetDouble(values, "autoPhalanxIIMinutes", ref mapped);
+            double stormMinutes = GetDouble(values, "autoStormspellMinutes", ref mapped);
 
-            // --- Debuff removals: union of the party na* and monitored* checkboxes ---
+            string protectSpell = Tier(protectTiers, GetInt(values, "autoProtect_Spell", ref mapped));
+            string shellSpell = Tier(shellTiers, GetInt(values, "autoShell_Spell", ref mapped));
+
+            MapBuffEntry(settings, "Haste", hasteMinutes);
+            MapBuffEntry(settings, protectSpell, protectMinutes);
+            MapBuffEntry(settings, shellSpell, shellMinutes);
+            MapBuffEntry(settings, Tier(refreshTiers, GetInt(values, "autoRefresh_Spell", ref mapped)), refreshMinutes);
+            MapBuffEntry(settings, Tier(regenTiers, GetInt(values, "autoRegen_Spell", ref mapped)), regenMinutes);
+            MapBuffEntry(settings, "Adloquium", adloquiumMinutes);
+            MapBuffEntry(settings, "Phalanx II", phalanxMinutes);
+            MapBuffEntry(settings, Tier(stormTiers, GetInt(values, "autoStorm_Spell", ref mapped)), stormMinutes);
+
+            // --- Debuff removals: union of the party na*, PL pl* and monitored* checkboxes ---
+            // Legacy suffix -> our removal name (StatusEffect enum names).
             Dictionary<string, string> debuffMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 { "Poison", "Poison" }, { "Paralysis", "Paralysis" }, { "Blindness", "Blindness" },
-                { "Silence", "Silence" }, { "Curse", "Curse" }, { "Disease", "Disease" },
-                { "Petrification", "Petrification" }, { "Doom", "Doom" }, { "Amnesia", "Amnesia" },
-                { "Plague", "Disease" }, { "Bane", "Curse" },
+                { "Silence", "Silence" }, { "Curse", "Curse" }, { "Curse2", "Curse2" },
+                { "Disease", "Disease" }, { "Plague", "Plague" }, { "Bane", "Bane" },
+                { "Petrification", "Petrification" }, { "Doom", "Doom" },
+                { "Slow", "Slow" }, { "Addle", "Addle" }, { "Bind", "Bind" }, { "Weight", "Weight" },
+                { "Bio", "Bio" }, { "Dia", "Dia" }, { "Flash", "Flash" }, { "Helix", "Helix" },
+                { "Burn", "Burn" }, { "Frost", "Frost" }, { "Choke", "Choke" }, { "Rasp", "Rasp" },
+                { "Shock", "Shock" }, { "Drown", "Drown" },
+                { "AttackDown", "Attack_Down" }, { "AccuracyDown", "Accuracy_Down" },
+                { "DefenseDown", "Defense_Down" }, { "EvasionDown", "Evasion_Down" },
+                { "MagicAccDown", "Magic_Acc_Down" }, { "MagicAtkDown", "Magic_Atk_Down" },
+                { "MaxHpDown", "Max_HP_Down" }, { "MaxMpDown", "Max_MP_Down" }, { "MaxTpDown", "Max_TP_Down" },
+                { "StrDown", "STR_Down" }, { "DexDown", "DEX_Down" }, { "VitDown", "VIT_Down" },
+                { "AgiDown", "AGI_Down" }, { "IntDown", "INT_Down" }, { "MndDown", "MND_Down" },
+                { "ChrDown", "CHR_Down" },
+                { "Requiem", "Requiem" }, { "Elegy", "Elegy" }, { "Threnody", "Threnody" },
             };
 
             HashSet<string> removals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (KeyValuePair<string, string> pair in debuffMap)
             {
                 int ignored = 0;
-                bool partyEnabled = GetBool(values, "na" + pair.Key, ref ignored);
-                bool monitoredEnabled = GetBool(values, "monitored" + pair.Key, ref ignored);
-                if (partyEnabled || monitoredEnabled)
+                bool enabled = GetBool(values, "na" + pair.Key, ref ignored)
+                    || GetBool(values, "pl" + pair.Key, ref ignored)
+                    || GetBool(values, "monitored" + pair.Key, ref ignored);
+                if (enabled)
                 {
                     removals.Add(pair.Value);
                     mapped++;
@@ -124,12 +160,76 @@ namespace CurePlease.Settings
             // naErase enables the whole Erase group.
             if (GetBool(values, "naErase", ref mapped))
             {
-                removals.UnionWith(new[] { "Slow", "Bind", "Weight", "Bio", "Dia", "Burn", "Flash", "STR_Down" });
+                removals.UnionWith(new[]
+                {
+                    "Slow", "Addle", "Bind", "Weight", "Bio", "Dia", "Flash", "Helix",
+                    "Burn", "Frost", "Choke", "Rasp", "Shock", "Drown",
+                    "Attack_Down", "Accuracy_Down", "Defense_Down", "Evasion_Down",
+                    "Magic_Acc_Down", "Magic_Atk_Down",
+                    "Max_HP_Down", "Max_MP_Down", "Max_TP_Down",
+                    "STR_Down", "DEX_Down", "VIT_Down", "AGI_Down", "INT_Down", "MND_Down", "CHR_Down",
+                    "Requiem", "Elegy", "Threnody",
+                });
             }
 
             if (removals.Count > 0)
             {
                 settings.Debuffs.EnabledRemovals = removals.ToList();
+            }
+
+            // Amnesia was Esuna-removable once; SE removed that. Flag stale configs.
+            int amnesiaIgnored = 0;
+            if (GetBool(values, "naAmnesia", ref amnesiaIgnored)
+                || GetBool(values, "plAmnesia", ref amnesiaIgnored)
+                || GetBool(values, "monitoredAmnesia", ref amnesiaIgnored))
+            {
+                result.Warnings.Add("Amnesia removal: no longer possible in-game (Esuna does not remove it) — dropped.");
+            }
+
+            // --- Wake-sleep (cure-based) ---
+            settings.Debuffs.WakeSleepEnabled = GetBool(values, "wakeSleepEnabled", ref mapped);
+            string[] wakeSpells = { "Cure", "Cura", "Curaga" };
+            string wakeSpell = Tier(wakeSpells, GetInt(values, "wakeSleepSpell", ref mapped));
+            if (wakeSpell != null)
+            {
+                settings.Debuffs.WakeSleepSpell = wakeSpell;
+            }
+
+            int sleepIgnored = 0;
+            if (settings.Debuffs.WakeSleepEnabled
+                || GetBool(values, "monitoredSleep", ref sleepIgnored)
+                || GetBool(values, "monitoredSleep2", ref sleepIgnored))
+            {
+                if (!settings.Debuffs.EnabledRemovals.Contains("Sleep"))
+                {
+                    settings.Debuffs.EnabledRemovals.Add("Sleep");
+                }
+            }
+
+            // --- PL self-removal items (silence / doom) ---
+            settings.Debuffs.PlSilenceItemEnabled = GetBool(values, "plSilenceItemEnabled", ref mapped);
+            string[] silenceItems = { "Catholicon", "Echo Drops", "Remedy", "Remedy Ointment", "Vicar's Drink" };
+            int silenceItemIndex = GetInt(values, "plSilenceItem", ref mapped);
+            if (silenceItemIndex == 3)
+            {
+                result.Warnings.Add("plSilenceItem: Remedy Ointment no longer exists in the game data — using Remedy.");
+                settings.Debuffs.PlSilenceItem = "Remedy";
+            }
+            else
+            {
+                string silenceItem = Tier(silenceItems, silenceItemIndex);
+                if (silenceItem != null)
+                {
+                    settings.Debuffs.PlSilenceItem = silenceItem;
+                }
+            }
+
+            settings.Debuffs.PlDoomItemEnabled = GetBool(values, "plDoomEnabled", ref mapped);
+            string[] doomItems = { "Holy Water", "Hallowed Water" };
+            string doomItem = Tier(doomItems, GetInt(values, "plDoomitem", ref mapped));
+            if (doomItem != null)
+            {
+                settings.Debuffs.PlDoomItem = doomItem;
             }
 
             // --- Bard songs (legacy song1-4/dummy1-2 are combo indices into a fixed list) ---
@@ -224,6 +324,80 @@ namespace CurePlease.Settings
 
             geo.Enabled = indiEnabled || geo.LuopanEnabled;
 
+            // --- Enmity assist (legacy "Hate Establisher": autoTarget*) ---
+            geo.EnmityAssist = GetBool(values, "autoTarget", ref mapped);
+            geo.EnmityPlayerName = GetString(values, "autoTarget_Target", ref mapped);
+            string hateSpell = GetString(values, "autoTargetSpell", ref mapped);
+            if (!string.IsNullOrWhiteSpace(hateSpell))
+            {
+                geo.EnmitySpell = hateSpell;
+            }
+
+            // Hate_SpellType: 0 = cast on the enemy, 1 = cast on the party member.
+            geo.EnmityCastOnEnemy = GetInt(values, "Hate_SpellType", ref mapped) == 0 && geo.EnmityAssist;
+            if (geo.EnmityAssist && !geo.EnmityCastOnEnemy && string.IsNullOrWhiteSpace(geo.EnmityPlayerName))
+            {
+                result.Warnings.Add("autoTarget: party-based hate needs autoTarget_Target (the tank's name) — enmity assist imported disabled.");
+                geo.EnmityAssist = false;
+            }
+
+            // --- Scholar (legacy Form2 SCHOLAR STRATAGEMS group) ---
+            SchSettings sch = settings.Sch;
+            sch.LightArts = GetBool(values, "LightArts", ref mapped);
+            sch.AddendumWhite = GetBool(values, "AddendumWhite", ref mapped);
+            sch.DarkArts = GetBool(values, "DarkArts", ref mapped);
+            sch.AddendumBlack = GetBool(values, "AddendumBlack", ref mapped);
+            sch.Sublimation = GetBool(values, "Sublimation", ref mapped);
+            uint sublimationMp = GetUInt(values, "sublimationMP", ref mapped);
+            if (sublimationMp > 0)
+            {
+                sch.SublimationMpDeficit = sublimationMp;
+            }
+
+            sch.UseRapture = GetBool(values, "rapture", ref mapped);
+
+            sch.Enabled = sch.LightArts || sch.AddendumWhite || sch.DarkArts || sch.AddendumBlack || sch.Sublimation
+                || sch.UseRapture;
+
+            // --- White mage / Red mage JAs (legacy Form2 enhancing group) ---
+            WhmSettings whm = settings.Whm;
+            whm.UseAfflatusSolace = GetBool(values, "AfflatusSolace", ref mapped);
+            whm.UseAfflatusMisery = GetBool(values, "AfflatusMisery", ref mapped);
+            whm.UseDevotion = GetBool(values, "Devotion", ref mapped);
+            whm.DevotionOnlyWhenEngaged = GetBool(values, "DevotionWhenEngaged", ref mapped);
+            whm.DevotionTarget = GetString(values, "DevotionTargetName", ref mapped);
+            uint devotionMp = GetUInt(values, "DevotionMP", ref mapped);
+            if (devotionMp > 0)
+            {
+                whm.DevotionMpBelow = devotionMp;
+            }
+
+            whm.Enabled = whm.UseAfflatusSolace || whm.UseAfflatusMisery || whm.UseDevotion;
+
+            // Divine Caress modifies removals, so it lives with the debuff settings.
+            settings.Debuffs.UseDivineCaress = GetBool(values, "DivineCaress", ref mapped);
+
+            settings.Rdm.UseComposure = GetBool(values, "Composure", ref mapped);
+            settings.Rdm.UseConvert = GetBool(values, "Convert", ref mapped);
+            if (GetUInt(values, "convertMP", ref mapped) > 0)
+            {
+                result.Warnings.Add("convertMP: legacy used an absolute MP threshold — configure Rdm.ConvertMpBelowPercent (%) instead.");
+            }
+
+            settings.Rdm.Enabled = settings.Rdm.UseComposure || settings.Rdm.UseConvert;
+
+            // Accession: legacy split it per feature. accessionProShell maps to
+            // UseAccession on the chosen Protect/Shell upkeep entries (engine preps
+            // Accession, self-cast then also hits party in range); accessionCure maps
+            // to the Curaga module's Accession + Cure I–IV party heal.
+            if (GetBool(values, "accessionProShell", ref mapped))
+            {
+                SetAccession(settings, protectSpell);
+                SetAccession(settings, shellSpell);
+            }
+
+            settings.Curaga.UseAccession = GetBool(values, "accessionCure", ref mapped);
+
             // --- Report the rest as ignored ---
             result.MappedCount = mapped;
             result.IgnoredCount = values.Count - mapped;
@@ -243,7 +417,7 @@ namespace CurePlease.Settings
                 result.Warnings.Add("EnableAddOn: addon-based party debuff tracking is not ported yet (P2).");
             }
 
-            result.Warnings.Add("Per-member buff selections (haste/protect/shell per slot), JA toggles, and item settings are not mapped yet — they arrive with their feature modules.");
+            result.Warnings.Add("Buff entries were mapped with their tiers/intervals but left DISABLED — legacy per-slot buff checkboxes were not persisted, so enable the rows you want on the Buff Upkeep page. Per-member buff selections, JA toggles, and item settings are not mapped yet.");
 
             if (GetBool(values, "Pianissimo", ref mapped))
             {
@@ -328,19 +502,14 @@ namespace CurePlease.Settings
 
         /// <summary>
         /// Legacy geo combo index -> spell name. Indices come from the fixed
-        /// GeomancerInfo table in legacy Form1.cs (geo_position order).
+        /// GeomancerInfo table in legacy Form1.cs (geo_position order), which
+        /// GeoModule.KnownColureSuffixes now mirrors.
         /// </summary>
         private static string LegacyGeoSpell(int index, string prefix)
         {
-            string[] suffixes =
-            {
-                "Voidance", "Precision", "Regen", "Haste", "Attunement", "Focus", "Barrier", "Refresh",
-                "CHR", "MND", "Fury", "INT", "AGI", "Fend", "VIT", "DEX", "Acumen", "STR",
-                "Poison", "Slow", "Torpor", "Slip", "Languor", "Paralysis", "Vex", "Frailty",
-                "Wilt", "Malaise", "Gravity", "Fade",
-            };
-
-            return index >= 0 && index < suffixes.Length ? prefix + suffixes[index] : null;
+            return index >= 0 && index < Core.Modules.GeoModule.KnownColureSuffixes.Count
+                ? prefix + Core.Modules.GeoModule.KnownColureSuffixes[index]
+                : null;
         }
 
         private static string GetString(Dictionary<string, string> values, string key, ref int mapped)
@@ -352,6 +521,45 @@ namespace CurePlease.Settings
             }
 
             return string.Empty;
+        }
+
+        /// <summary>Safe tier-list index; null when out of range.</summary>
+        private static string Tier(string[] tiers, int index)
+        {
+            return index >= 0 && index < tiers.Length ? tiers[index] : null;
+        }
+
+        /// <summary>Sets the fallback interval on the named catalog entry (legacy minutes win when positive).</summary>
+        private static void MapBuffEntry(CurePleaseSettings settings, string spell, double legacyMinutes)
+        {
+            if (spell == null)
+            {
+                return;
+            }
+
+            BuffEntry entry = settings.Buffs.Entries.Find(
+                e => e.Spell.Equals(spell, StringComparison.OrdinalIgnoreCase));
+            if (entry != null && legacyMinutes > 0)
+            {
+                entry.DurationMinutes = legacyMinutes;
+            }
+        }
+
+        /// <summary>Flags the named catalog entry for Accession prep (legacy accessionProShell).</summary>
+        private static void SetAccession(CurePleaseSettings settings, string spell)
+        {
+            if (spell == null)
+            {
+                return;
+            }
+
+            BuffEntry entry = settings.Buffs.Entries.Find(
+                e => e.Spell.Equals(spell, StringComparison.OrdinalIgnoreCase));
+            BuffCatalogEntry catalog = BuffCatalog.Find(spell);
+            if (entry != null && catalog != null && catalog.AccessionCompatible)
+            {
+                entry.UseAccession = true;
+            }
         }
 
         private static bool GetBool(Dictionary<string, string> values, string key, ref int mapped)

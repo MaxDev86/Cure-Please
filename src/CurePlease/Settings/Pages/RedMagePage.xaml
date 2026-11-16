@@ -1,0 +1,27 @@
+<UserControl x:Class="CurePlease.Settings.Pages.RedMagePage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Margin="12">
+
+        <CheckBox Content="Enable Red Mage job abilities (main or sub job RDM)"
+                  IsChecked="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}"
+                  FontWeight="Bold"/>
+
+        <TextBlock Text="Job abilities" FontWeight="Bold" Margin="0,14,0,4"/>
+        <TextBlock Text="Kept up off your own buffs, so a dispelled Composure is re-upped immediately. Composure is main-job only — an RDM sub job never has it."
+                   TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,6"/>
+        <CheckBox Content="Keep Composure up (extends your enhancing magic duration)"
+                  IsChecked="{Binding UseComposure, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0"/>
+
+        <TextBlock Text="Convert" FontWeight="Bold" Margin="0,14,0,4"/>
+        <TextBlock Text="Swap HP and MP when your MP drops to the threshold (works from a sub job). Never fires while weakened — converting at weakness HP is usually fatal. Note: legacy used an absolute MP value (default 300); this is a percent so it scales with gear and level."
+                   TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,6"/>
+        <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+            <CheckBox Content="Convert when MP at or below:"
+                      IsChecked="{Binding UseConvert, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center"/>
+            <TextBox Text="{Binding ConvertMpBelowPercent, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="8,0,0,0"/>
+            <TextBlock Text="%" VerticalAlignment="Center" Margin="4,0,0,0"/>
+        </StackPanel>
+
+    </StackPanel>
+</UserControl>

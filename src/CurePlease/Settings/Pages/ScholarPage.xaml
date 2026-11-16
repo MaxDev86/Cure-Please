@@ -1,0 +1,68 @@
+<UserControl x:Class="CurePlease.Settings.Pages.ScholarPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Margin="12">
+
+        <CheckBox Content="Enable Scholar support (main or sub job SCH)"
+                  IsChecked="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}"
+                  FontWeight="Bold"/>
+
+        <!-- Arts -->
+        <TextBlock Text="Arts" FontWeight="Bold" Margin="0,14,0,4"/>
+        <TextBlock Text="Kept up off your own buffs, so a dispelled art is re-upped immediately. Light Arts and Dark Arts overwrite each other in-game — selecting one clears the other; selecting an addendum selects its art."
+                   TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,6"/>
+        <CheckBox Content="Keep Light Arts up"
+                  IsChecked="{Binding LightArts, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0"/>
+        <CheckBox Content="Addendum: White while Light Arts is up (stratagem charge)"
+                  IsChecked="{Binding AddendumWhite, UpdateSourceTrigger=PropertyChanged}" Margin="16,2,0,0"/>
+        <TextBlock Text="Addenda work from a sub job too (SCH 10 / 30, so main level 20 / 60 with /SCH)."
+                   Foreground="Gray" Margin="32,0,0,0"/>
+        <CheckBox Content="Keep Dark Arts up"
+                  IsChecked="{Binding DarkArts, UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,0"/>
+        <CheckBox Content="Addendum: Black while Dark Arts is up (stratagem charge)"
+                  IsChecked="{Binding AddendumBlack, UpdateSourceTrigger=PropertyChanged}" Margin="16,2,0,0"/>
+
+        <!-- Sublimation -->
+        <TextBlock Text="Sublimation" FontWeight="Bold" Margin="0,14,0,4"/>
+        <TextBlock Text="Charges while neither Sublimation buff is up (never while Refresh is on — the buffs are mutually exclusive), then consumes the charge once your MP deficit reaches the threshold."
+                   TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,6"/>
+        <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+            <CheckBox Content="Use Sublimation, consume at MP deficit:"
+                      IsChecked="{Binding Sublimation, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center"/>
+            <TextBox Text="{Binding SublimationMpDeficit, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="8,0,0,0"/>
+        </StackPanel>
+
+        <!-- Rapture -->
+        <TextBlock Text="Rapture (SCH 55; /SCH requires a master-leveled main job)" FontWeight="Bold" Margin="0,14,0,4"/>
+        <TextBlock Text="Requires Light Arts and spends one stratagem charge before a qualifying cure, boosting it substantially. Conservative by default: it only fires on big heals and keeps one charge in reserve."
+                   TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,6"/>
+        <CheckBox Content="Use Rapture before strong cures"
+                  IsChecked="{Binding UseRapture, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0"/>
+        <StackPanel Orientation="Horizontal" Margin="16,2,0,0">
+            <TextBlock Text="When target HP is at or below (%):" VerticalAlignment="Center"/>
+            <TextBox Text="{Binding RaptureCureHpBelowPercent, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="8,0,0,0"/>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Margin="16,2,0,0">
+            <TextBlock Text="and estimated missing HP is at least:" VerticalAlignment="Center"/>
+            <TextBox Text="{Binding RaptureMinimumHpLoss, UpdateSourceTrigger=PropertyChanged}" Width="70" Margin="8,0,0,0"/>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Margin="16,2,0,0">
+            <TextBlock Text="Reserve stratagem charges:" VerticalAlignment="Center"/>
+            <TextBox Text="{Binding RaptureReserveCharges, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="8,0,0,0"/>
+        </StackPanel>
+        <CheckBox Content="At full charges, pre-charge Rapture instead of wasting recharge"
+                  IsChecked="{Binding RaptureHarvestAtFullCharge, UpdateSourceTrigger=PropertyChanged}" Margin="16,2,0,0"/>
+
+        <!-- Perpetuance -->
+        <TextBlock Text="Perpetuance (SCH main only, SCH 87)" FontWeight="Bold" Margin="0,14,0,4"/>
+        <TextBlock Text="Extends the next enhancing spell's duration; combines with Accession on the same cast (2 stratagem charges total). Enabled per buff on the Buff Upkeep page. The multiplier is pre-set from your owned gear on attach; pick it yourself if the bracers are on a storage slip (the scan cannot see those) — a manual choice stops the auto pre-set."
+                   TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,6"/>
+        <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+            <TextBlock Text="Duration multiplier:" VerticalAlignment="Center"/>
+            <ComboBox ItemsSource="{Binding PerpetuanceTiers}" DisplayMemberPath="Label"
+                      SelectedIndex="{Binding PerpetuanceTierIndex, UpdateSourceTrigger=PropertyChanged}"
+                      Width="220" Margin="8,0,0,0"/>
+        </StackPanel>
+
+    </StackPanel>
+</UserControl>

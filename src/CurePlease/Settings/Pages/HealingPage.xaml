@@ -1,0 +1,87 @@
+<UserControl x:Class="CurePlease.Settings.Pages.HealingPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="12">
+
+            <!-- Cures -->
+            <TextBlock Text="Cures" FontWeight="Bold" FontSize="14"/>
+            <TextBlock Text="Applies to any job with cure spells (WHM, RDM, SCH, PLD, or a healing sub job). A member becomes a cure candidate when their HP drops to the threshold; the tier is picked from the HP they're missing."
+                       TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,6"/>
+            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                <TextBlock Text="Party members at/below HP%:" VerticalAlignment="Center" Width="200"/>
+                <TextBox Text="{Binding Settings.Cures.CurePercentage, UpdateSourceTrigger=PropertyChanged}" Width="50"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                <TextBlock Text="High-priority members at/below HP%:" VerticalAlignment="Center" Width="200"/>
+                <TextBox Text="{Binding Settings.Cures.PriorityCurePercentage, UpdateSourceTrigger=PropertyChanged}" Width="50"/>
+                <TextBlock Text="High-priority list is on the Priorities page."
+                           VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                <TextBlock Text="Monitored character at/below HP%:" VerticalAlignment="Center" Width="200"/>
+                <TextBox Text="{Binding Settings.Cures.MonitoredCurePercentage, UpdateSourceTrigger=PropertyChanged}" Width="50"/>
+            </StackPanel>
+            <DataGrid ItemsSource="{Binding CureTiers}" AutoGenerateColumns="False" IsReadOnly="False"
+                      CanUserAddRows="False" CanUserDeleteRows="False" HeadersVisibility="Column"
+                      Height="150" Margin="0,8,0,0">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Tier" Binding="{Binding TierName}" IsReadOnly="True" Width="90"/>
+                    <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" Width="70"/>
+                    <DataGridTextColumn Header="Min HP loss" Binding="{Binding MinimumHpLoss, UpdateSourceTrigger=PropertyChanged}" Width="*"/>
+                </DataGrid.Columns>
+            </DataGrid>
+            <CheckBox Content="Undercure — fall back to a lower tier when the chosen tier is unavailable"
+                      IsChecked="{Binding Settings.Cures.Undercure, UpdateSourceTrigger=PropertyChanged}" Margin="0,8,0,0"/>
+            <CheckBox Content="Cure alliance members (single-target only — their HP is visible, their buffs/debuffs are not)"
+                      IsChecked="{Binding Settings.Cures.CureAllianceEnabled, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0"/>
+            <CheckBox Content="Overcure — step up a tier when the chosen tier is on recast"
+                      IsChecked="{Binding Settings.Cures.Overcure, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0"/>
+            <CheckBox Content="Overcure only for high-priority targets"
+                      IsChecked="{Binding Settings.Cures.OvercureOnHighPriority, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0"/>
+            <CheckBox Content="Majesty before cures when 2+ members need one (PLD job ability — the cure lands AoE; also affects Protect/Shell)"
+                      IsChecked="{Binding Settings.Cures.UseMajesty, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0"/>
+            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                <CheckBox Content="Divine Seal before critical cures, at or below HP%:"
+                          IsChecked="{Binding Settings.Cures.UseDivineSeal, UpdateSourceTrigger=PropertyChanged}"
+                          VerticalAlignment="Center"/>
+                <TextBox Text="{Binding Settings.Cures.DivineSealHpBelowPercent, UpdateSourceTrigger=PropertyChanged}" Width="40" Margin="6,0,0,0"/>
+                <TextBlock Text="(WHM 15 — works from a sub job; the cure is doubled. Shares a 10-minute recast with group removals)"
+                           Foreground="Gray" VerticalAlignment="Center" Margin="6,0,0,0" TextWrapping="Wrap"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                <TextBlock Text="Emergency cures at or below HP%:" VerticalAlignment="Center"/>
+                <TextBox Text="{Binding Settings.Cures.IntentEmergencyHpPercent, UpdateSourceTrigger=PropertyChanged}" Width="40" Margin="6,0,0,0"/>
+                <TextBlock Text="may consume a claimed Accession/Perpetuance (life beats buffs — the claim owner re-preps)"
+                           Foreground="Gray" VerticalAlignment="Center" Margin="6,0,0,0" TextWrapping="Wrap"/>
+            </StackPanel>
+
+            <!-- Curaga -->
+            <TextBlock Text="Curaga" FontWeight="Bold" FontSize="14" Margin="0,18,0,0"/>
+            <TextBlock Text="AoE cure fired when enough members are below the threshold at once."
+                       TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,6"/>
+            <CheckBox Content="Enable Curaga"
+                      IsChecked="{Binding Settings.Curaga.Enabled, UpdateSourceTrigger=PropertyChanged}"/>
+            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                <TextBlock Text="Members at/below HP%:" VerticalAlignment="Center" Width="200"/>
+                <TextBox Text="{Binding Settings.Curaga.CurePercentage, UpdateSourceTrigger=PropertyChanged}" Width="50"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                <TextBlock Text="Injured members required:" VerticalAlignment="Center" Width="200"/>
+                <TextBox Text="{Binding Settings.Curaga.RequiredMembers, UpdateSourceTrigger=PropertyChanged}" Width="50"/>
+            </StackPanel>
+            <CheckBox Content="Use Accession + Cure I–IV instead of Curaga (SCH main or sub; one stratagem charge per party cure — Cure V/VI are incompatible)"
+                      IsChecked="{Binding Settings.Curaga.UseAccession, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0"/>
+            <DataGrid ItemsSource="{Binding CuragaTiers}" AutoGenerateColumns="False" IsReadOnly="False"
+                      CanUserAddRows="False" CanUserDeleteRows="False" HeadersVisibility="Column"
+                      Height="130" Margin="0,8,0,0">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Tier" Binding="{Binding TierName}" IsReadOnly="True" Width="90"/>
+                    <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" Width="70"/>
+                    <DataGridTextColumn Header="Min HP loss" Binding="{Binding MinimumHpLoss, UpdateSourceTrigger=PropertyChanged}" Width="*"/>
+                </DataGrid.Columns>
+            </DataGrid>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

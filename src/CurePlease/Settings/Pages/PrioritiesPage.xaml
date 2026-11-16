@@ -1,0 +1,42 @@
+<UserControl x:Class="CurePlease.Settings.Pages.PrioritiesPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="12">
+
+            <TextBlock Text="Priorities" FontWeight="Bold" FontSize="14"/>
+            <TextBlock Text="Every engine tick scores every action it could take right now and performs the highest-scoring one. These numbers tune that scoring — raise a score to make that kind of action win more often. Defaults put emergency work (debuffs, cures) far above upkeep (songs, buffs, stances)."
+                       TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,6"/>
+
+            <!-- Member priority -->
+            <TextBlock Text="Member priority" FontWeight="Bold" Margin="0,8,0,0"/>
+            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                <TextBlock Text="Monitored character multiplier:" VerticalAlignment="Center" Width="220"/>
+                <TextBox Text="{Binding Settings.MonitoredWeight, UpdateSourceTrigger=PropertyChanged}" Width="50"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                <TextBlock Text="High-priority member multiplier:" VerticalAlignment="Center" Width="220"/>
+                <TextBox Text="{Binding Settings.HighPriorityWeight, UpdateSourceTrigger=PropertyChanged}" Width="50"/>
+            </StackPanel>
+            <TextBlock Text="High-priority members, one name per line. They become cure candidates at the higher threshold on the Healing page and their cures/debuff removals are multiplied by the weight above."
+                       TextWrapping="Wrap" Foreground="Gray" Margin="0,10,0,2"/>
+            <TextBox Text="{Binding HighPriorityNames}" AcceptsReturn="True" MinHeight="66"
+                     VerticalScrollBarVisibility="Auto"/>
+
+            <!-- Action scores -->
+            <TextBlock Text="Action scores" FontWeight="Bold" Margin="0,16,0,0"/>
+            <TextBlock Text="Base score per action kind. Prep job abilities (Accession, Blaze of Glory, Nightingale...) score a little above their kind's base so they fire just before the action they enable."
+                       TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,4"/>
+            <DataGrid ItemsSource="{Binding Weights}" AutoGenerateColumns="False" IsReadOnly="False"
+                      CanUserAddRows="False" CanUserDeleteRows="False" HeadersVisibility="Column"
+                      Height="240" Margin="0,4,0,0">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Action" Binding="{Binding Name}" IsReadOnly="True" Width="150"/>
+                    <DataGridTextColumn Header="Score" Binding="{Binding Score, UpdateSourceTrigger=PropertyChanged}" Width="60"/>
+                    <DataGridTextColumn Header="How it's used" Binding="{Binding Note}" IsReadOnly="True" Width="*"/>
+                </DataGrid.Columns>
+            </DataGrid>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

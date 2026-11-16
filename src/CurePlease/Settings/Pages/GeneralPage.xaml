@@ -1,0 +1,33 @@
+<UserControl x:Class="CurePlease.Settings.Pages.GeneralPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Margin="12">
+
+        <TextBlock Text="Engine" FontWeight="Bold" Margin="0,0,0,6"/>
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+            <TextBlock Text="Tick interval (ms):" VerticalAlignment="Center" Width="130"/>
+            <TextBox Text="{Binding General.TickIntervalMs, UpdateSourceTrigger=PropertyChanged}" Width="70"/>
+            <TextBlock Text="How often the decision loop runs. Legacy used 500."
+                       VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray"/>
+        </StackPanel>
+        <CheckBox Content="Pause actions when zoning (resume manually with the Resume button)"
+                  IsChecked="{Binding General.PauseOnZone, UpdateSourceTrigger=PropertyChanged}"
+                  Margin="0,4,0,0"/>
+        <CheckBox Content="Allow healing the local player when not in the party"
+                  IsChecked="{Binding General.EnableOutOfPartyHealing, UpdateSourceTrigger=PropertyChanged}"
+                  Margin="0,4,0,0"/>
+
+        <Separator Margin="0,16"/>
+
+        <TextBlock Text="Addon" FontWeight="Bold" Margin="0,0,0,6"/>
+        <CheckBox Content="Use the CurePlease addon (party buffs + cast events over UDP)"
+                  IsChecked="{Binding Addon.Enabled, UpdateSourceTrigger=PropertyChanged}"/>
+        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+            <TextBlock Text="UDP port:" VerticalAlignment="Center" Width="130"/>
+            <TextBox Text="{Binding Addon.Port, UpdateSourceTrigger=PropertyChanged}" Width="70"/>
+            <TextBlock Text="19771 default; legacy addon used 19769."
+                       VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray"/>
+        </StackPanel>
+
+    </StackPanel>
+</UserControl>

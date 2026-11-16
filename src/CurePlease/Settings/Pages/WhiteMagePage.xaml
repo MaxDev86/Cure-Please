@@ -1,0 +1,41 @@
+<UserControl x:Class="CurePlease.Settings.Pages.WhiteMagePage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Margin="12">
+
+        <CheckBox Content="Enable White Mage job abilities (main job WHM only)"
+                  IsChecked="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}"
+                  FontWeight="Bold"/>
+        <TextBlock Text="Nothing on this page works from a WHM sub job: Afflatus stances are main-job only and Devotion is a merit ability."
+                   TextWrapping="Wrap" Foreground="Gray" Margin="0,4,0,0"/>
+
+        <!-- Afflatus -->
+        <TextBlock Text="Afflatus stance" FontWeight="Bold" Margin="0,14,0,4"/>
+        <TextBlock Text="Kept up off your own buffs, so a dispelled stance is re-upped immediately. Solace and Misery overwrite each other in-game — selecting one clears the other."
+                   TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,6"/>
+        <CheckBox Content="Keep Afflatus Solace up (cure potency)"
+                  IsChecked="{Binding UseAfflatusSolace, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0"/>
+        <CheckBox Content="Keep Afflatus Misery up (Cura/Banish stance)"
+                  IsChecked="{Binding UseAfflatusMisery, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0"/>
+
+        <!-- Devotion -->
+        <TextBlock Text="Devotion" FontWeight="Bold" Margin="0,14,0,4"/>
+        <TextBlock Text="Give MP to a party member at the cost of your own HP. Fires only while you are above 80% HP and the target is below the MP threshold and within 10 yalms."
+                   TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,6"/>
+        <CheckBox Content="Use Devotion"
+                  IsChecked="{Binding UseDevotion, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0"/>
+        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+            <TextBlock Text="Target:" VerticalAlignment="Center" Width="170"/>
+            <TextBox Text="{Binding DevotionTarget, UpdateSourceTrigger=PropertyChanged}" Width="160"/>
+            <TextBlock Text="Blank = any qualifying party member."
+                       VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray"/>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+            <TextBlock Text="Target MP at or below:" VerticalAlignment="Center" Width="170"/>
+            <TextBox Text="{Binding DevotionMpBelow, UpdateSourceTrigger=PropertyChanged}" Width="70"/>
+        </StackPanel>
+        <CheckBox Content="Only while engaged (monitored character when attached, else yourself)"
+                  IsChecked="{Binding DevotionOnlyWhenEngaged, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0"/>
+
+    </StackPanel>
+</UserControl>
