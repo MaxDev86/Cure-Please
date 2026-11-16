@@ -137,6 +137,42 @@ namespace CurePlease.Core
             }
         }
 
+        /// <summary>Sends /item "name" target and waits out the use delay (no cast bar for items).</summary>
+        public async Task<CastResult> UseItemAsync(string itemName, string target, CancellationToken ct)
+        {
+            CastResult result = new CastResult { SpellName = itemName, TargetName = target };
+            Stopwatch sw = Stopwatch.StartNew();
+
+            await _castSlot.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                Interlocked.Exchange(ref _addonCastEvent, 0);
+
+                if (!_state.SendCommand("/item \"" + itemName + "\" " + target))
+                {
+                    result.Outcome = CastOutcome.SendFailed;
+                    return result;
+                }
+
+                // Item use animation is 1-2 s; also covers the post-use lockout so a
+                // follow-up /ma is not rejected (same reasoning as JobAbilityAsync).
+                await Task.Delay(TimeSpan.FromSeconds(2.5), ct).ConfigureAwait(false);
+                result.Outcome = CastOutcome.Success;
+                return result;
+            }
+            catch (OperationCanceledException)
+            {
+                result.Outcome = CastOutcome.Cancelled;
+                return result;
+            }
+            finally
+            {
+                sw.Stop();
+                result.Elapsed = sw.Elapsed;
+                _castSlot.Release();
+            }
+        }
+
         /// <summary>Sends a job ability (/ja "name" &lt;me&gt;) and verifies the buff appears or recast starts.</summary>
         public async Task<CastResult> JobAbilityAsync(string abilityName, string target, CancellationToken ct)
         {

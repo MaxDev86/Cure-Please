@@ -118,5 +118,29 @@ namespace CurePlease.Core
 
         public static readonly string[] CureTierNames = { "Cure VI", "Cure V", "Cure IV", "Cure III", "Cure II", "Cure" };
         public static readonly string[] CuragaTierNames = { "Curaga V", "Curaga IV", "Curaga III", "Curaga II", "Curaga" };
+
+        /// <summary>
+        /// Cure tiers with V/VI dropped: they are not Accession-compatible (BG-wiki),
+        /// so while Accession is up cures resolve from Cure IV down — a Cure V/VI cast
+        /// would waste the stratagem on a single target.
+        /// </summary>
+        public static readonly string[] AccessionCureTierNames = { "Cure IV", "Cure III", "Cure II", "Cure" };
+
+        /// <summary>Drops the Cure VI/V threshold entries to match <see cref="AccessionCureTierNames"/>.</summary>
+        public static IReadOnlyList<CureTierSettings> AccessionCureTiers(IReadOnlyList<CureTierSettings> tiers)
+        {
+            if (tiers.Count <= 2)
+            {
+                return tiers;
+            }
+
+            var sliced = new List<CureTierSettings>(tiers.Count - 2);
+            for (int i = 2; i < tiers.Count; i++)
+            {
+                sliced.Add(tiers[i]);
+            }
+
+            return sliced;
+        }
     }
 }

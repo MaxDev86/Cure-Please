@@ -34,6 +34,21 @@ namespace CurePlease.Core
         public string TargetName { get; set; } = string.Empty;
 
         public bool IsJobAbility { get; set; }
+
+        /// <summary>Module that offered this candidate (tagged by the engine during collection).</summary>
+        public string OwnerModule { get; set; }
+
+        /// <summary>For prep JAs: the "next spell" buff this JA grants (0 = not a prep).</summary>
+        public StatusEffect PrepBuff { get; set; }
+
+        /// <summary>For prep JAs: the spell the buff is intended for (empty = not fixed at prep time).</summary>
+        public string PrepForSpell { get; set; }
+
+        /// <summary>
+        /// Life-or-death candidate (cure target at/below CureSettings.IntentEmergencyHpPercent):
+        /// may consume another module's claimed stratagem buff — the claim owner re-preps.
+        /// </summary>
+        public bool IsEmergency { get; set; }
     }
 
     /// <summary>
@@ -54,6 +69,14 @@ namespace CurePlease.Core
         void OnActionExecuted(ActionCandidate candidate, CastResult result)
         {
         }
+
+        /// <summary>
+        /// Called when the player zones: all buffs/songs/luopons are gone, so modules
+        /// must drop their landing timers and tracking state. Default no-op.
+        /// </summary>
+        void OnZoneChanged()
+        {
+        }
     }
 
     /// <summary>
@@ -68,6 +91,7 @@ namespace CurePlease.Core
         private readonly CastingService _casting;
         private readonly SettingsService _settings;
         private readonly List<IDecisionModule> _modules = new List<IDecisionModule>();
+        private readonly StratagemIntents _intents = new StratagemIntents();
 
         /// <summary>Optional addon data provider; when set, party buffs are merged into each snapshot.</summary>
         public AddonListener Addon { get; set; }
@@ -75,11 +99,20 @@ namespace CurePlease.Core
         private CancellationTokenSource _cts;
         private Task _loop;
 
+        // Zone tracking: a tick that was logged in followed by LoginStatus.Loading
+        // (or a zone-id change between two valid snapshots) is a zone transition.
+        private bool _wasLoggedIn;
+        private int _lastZoneId = -1;
+        private bool _pausedByZone;
+        private CurePleaseSettings _auditedSettings;
+        private string _auditContextKey;
+
         public Engine(GameStateService state, CastingService casting, SettingsService settings)
         {
             _state = state;
             _casting = casting;
             _settings = settings;
+            _intents.ClaimAdded += RaiseLog;
         }
 
         public bool IsRunning => _loop != null && !_loop.IsCompleted;
@@ -93,6 +126,52 @@ namespace CurePlease.Core
         /// <summary>Raised once per tick with the snapshot (for the party UI), even when idle.</summary>
         public event Action<GameSnapshot> SnapshotReady;
 
+        /// <summary>
+        /// True when zoning latched a pause (General.PauseOnZone). Actions stay
+        /// suspended after zone-in until <see cref="ResumeFromZone"/> is called.
+        /// </summary>
+        public bool PausedByZone => _pausedByZone;
+
+        /// <summary>Raised when the zone-pause latch engages or clears (for the UI button).</summary>
+        public event Action<bool> ZonePauseChanged;
+
+        /// <summary>Clears the zone-pause latch; the engine resumes acting next tick.</summary>
+        public void ResumeFromZone()
+        {
+            if (!_pausedByZone)
+            {
+                return;
+            }
+
+            _pausedByZone = false;
+            RaiseLog("Resumed after zoning");
+            ZonePauseChanged?.Invoke(false);
+        }
+
+        private void OnZoneTransition(CurePleaseSettings settings)
+        {
+            RaiseLog("Zoned — clearing buff/song tracking");
+            _intents.Clear();
+            foreach (IDecisionModule module in _modules)
+            {
+                try
+                {
+                    module.OnZoneChanged();
+                }
+                catch (Exception ex)
+                {
+                    RaiseLog(module.Name + " zone-reset error: " + ex.Message);
+                }
+            }
+
+            if (settings.General.PauseOnZone && !_pausedByZone)
+            {
+                _pausedByZone = true;
+                RaiseLog("Paused (zoned) — press Resume to continue");
+                ZonePauseChanged?.Invoke(true);
+            }
+        }
+
         public void RegisterModule(IDecisionModule module)
         {
             _modules.Add(module);
@@ -105,6 +184,8 @@ namespace CurePlease.Core
                 return;
             }
 
+            _auditedSettings = null;
+            _auditContextKey = null;
             _cts = new CancellationTokenSource();
             _loop = Task.Run(() => RunAsync(_cts.Token));
         }
@@ -112,6 +193,11 @@ namespace CurePlease.Core
         public void Stop()
         {
             _cts?.Cancel();
+            if (_pausedByZone)
+            {
+                _pausedByZone = false;
+                ZonePauseChanged?.Invoke(false);
+            }
         }
 
         public async Task StopAsync()
@@ -174,13 +260,31 @@ namespace CurePlease.Core
 
             if (snapshot == null)
             {
+                // Logged-in -> Loading is the zone edge (legacy watched the same flag).
+                if (_wasLoggedIn && _state.LastLoginStatus == (int)LoginStatus.Loading)
+                {
+                    OnZoneTransition(_settings.Current);
+                }
+
+                _wasLoggedIn = false;
                 SnapshotReady?.Invoke(null);
                 return;
             }
 
+            // Belt-and-braces: a zone change without an observed Loading tick
+            // (e.g. warp between two valid snapshots) still resets module state.
+            if (_wasLoggedIn && _lastZoneId != -1 && snapshot.Player.ZoneId != _lastZoneId)
+            {
+                OnZoneTransition(_settings.Current);
+            }
+
+            _wasLoggedIn = true;
+            _lastZoneId = snapshot.Player.ZoneId;
+
             SnapshotReady?.Invoke(snapshot);
 
             CurePleaseSettings settings = _settings.Current;
+            AuditCapabilities(snapshot.Player, settings);
 
             // Merge addon-provided party buffs (with staleness + roster pruning).
             if (Addon != null && Addon.IsRunning && settings.Addon.Enabled)
@@ -200,7 +304,7 @@ namespace CurePlease.Core
                 Addon.PruneRoster(roster);
             }
 
-            if (settings.General.PauseActions)
+            if (settings.General.PauseActions || _pausedByZone)
             {
                 return;
             }
@@ -219,11 +323,17 @@ namespace CurePlease.Core
             }
 
             List<ActionCandidate> candidates = new List<ActionCandidate>();
+            _intents.Prune(snapshot.Player.Buffs);
             foreach (IDecisionModule module in _modules)
             {
                 try
                 {
+                    int before = candidates.Count;
                     module.AddCandidates(snapshot, settings, candidates);
+                    for (int i = before; i < candidates.Count; i++)
+                    {
+                        candidates[i].OwnerModule = module.Name;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -242,6 +352,24 @@ namespace CurePlease.Core
                     || (abilitiesLocked && c.IsJobAbility));
             }
 
+            // Capability is the hard stop: an unlearned/off-job action must never
+            // become an in-game command error. The audit explains these at context
+            // changes; the per-tick filter stays silent.
+            candidates.RemoveAll(c => !CapabilityAudit.IsAvailable(_state, c));
+
+            // Stratagem intents: a claimed "next spell" buff (Accession, Divine
+            // Seal, ...) is reserved for the claiming module. Suppress other
+            // modules' spells that would consume it (emergencies exempt) and
+            // competing prep JAs for the same buff.
+            if (_intents.Count > 0)
+            {
+                candidates.RemoveAll(c =>
+                    !c.IsEmergency
+                    && ((c.IsJobAbility && c.PrepBuff != 0 && _intents.IsHeldByOther(c.PrepBuff, c.OwnerModule))
+                        || (!c.IsJobAbility && c.Category != ActionCategory.Item
+                            && _intents.BlocksSpell(c.ActionName, c.OwnerModule))));
+            }
+
             if (candidates.Count == 0)
             {
                 return;
@@ -249,12 +377,19 @@ namespace CurePlease.Core
 
             ActionCandidate best = candidates.OrderByDescending(c => c.Score).First();
 
-            CastResult result = best.IsJobAbility
-                ? await _casting.JobAbilityAsync(best.ActionName, best.TargetName, ct).ConfigureAwait(false)
-                : await _casting.CastAsync(best.ActionName, best.TargetName, ct).ConfigureAwait(false);
+            CastResult result = best.Category == ActionCategory.Item
+                ? await _casting.UseItemAsync(best.ActionName, best.TargetName, ct).ConfigureAwait(false)
+                : best.IsJobAbility
+                    ? await _casting.JobAbilityAsync(best.ActionName, best.TargetName, ct).ConfigureAwait(false)
+                    : await _casting.CastAsync(best.ActionName, best.TargetName, ct).ConfigureAwait(false);
 
             RaiseLog(string.Format("[{0:0.0}] {1} — {2}{3}", best.Score, best.Description, result.Outcome,
                 result.Detail.Length > 0 ? " (" + result.Detail + ")" : string.Empty));
+
+            if (result.Succeeded && best.IsJobAbility && best.PrepBuff != 0)
+            {
+                _intents.Add(best.PrepBuff, best.OwnerModule, best.PrepForSpell, best.Description);
+            }
 
             foreach (IDecisionModule module in _modules)
             {
@@ -269,6 +404,32 @@ namespace CurePlease.Core
             }
 
             ActionExecuted?.Invoke(result);
+        }
+
+        private void AuditCapabilities(PlayerState player, CurePleaseSettings settings)
+        {
+            string contextKey = (player.Name ?? string.Empty) + "|" + player.MainJob + "|" + player.SubJob
+                + "|" + player.MainJobLevel + "|" + player.SubJobLevel + "|" + player.MainJobMasterLevel;
+            if (contextKey == _auditContextKey && ReferenceEquals(settings, _auditedSettings))
+            {
+                return;
+            }
+
+            _auditContextKey = contextKey;
+            _auditedSettings = settings;
+
+            IReadOnlyList<string> issues = CapabilityAudit.FindIssues(_state, settings, player);
+            if (issues.Count == 0)
+            {
+                return;
+            }
+
+            RaiseLog("Capability audit: " + issues.Count + " enabled action"
+                + (issues.Count == 1 ? " is" : "s are") + " unavailable in this context");
+            foreach (string issue in issues)
+            {
+                RaiseLog("  " + issue);
+            }
         }
 
         private static bool HasAnyBuff(PlayerState player, params FFXI.Memory.StatusEffect[] effects)

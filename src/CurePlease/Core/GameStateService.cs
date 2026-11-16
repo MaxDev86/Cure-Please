@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using FFXI.Memory;
 
 namespace CurePlease.Core
@@ -22,6 +23,9 @@ namespace CurePlease.Core
 
         /// <summary>Raw entity status field (1 = engaged/fighting).</summary>
         public uint Status { get; set; }
+
+        /// <summary>Entity-array index of this entity's current target (0 when none).</summary>
+        public ushort TargetIndex { get; set; }
 
         /// <summary>Distance from the local player in yalms.</summary>
         public float Distance { get; set; }
@@ -52,6 +56,14 @@ namespace CurePlease.Core
         public string LastError { get; private set; }
 
         public bool IsAttached => _pl != null;
+
+        /// <summary>
+        /// Raw <see cref="FFXI.Memory.LoginStatus"/> value from the most recent
+        /// <see cref="TakeSnapshot"/> call (-1 = never read). The engine uses this to
+        /// distinguish zoning (Loading) from sitting at the login screen. Protected
+        /// setter so snapshot-faking tests can drive zone transitions.
+        /// </summary>
+        public int LastLoginStatus { get; protected set; } = -1;
 
         public void Attach(int processId)
         {
@@ -104,7 +116,8 @@ namespace CurePlease.Core
 
             try
             {
-                if (_pl.Player.LoginStatus != (int)LoginStatus.LoggedIn)
+                LastLoginStatus = _pl.Player.LoginStatus;
+                if (LastLoginStatus != (int)LoginStatus.LoggedIn)
                 {
                     SetState(ConnectionState.AttachedNotLoggedIn);
                     return null;
@@ -124,6 +137,7 @@ namespace CurePlease.Core
                     MPMax = _pl.Player.MPMax,
                     MainJob = _pl.Player.MainJob,
                     MainJobLevel = _pl.Player.MainJobLevel,
+                    MainJobMasterLevel = _pl.Player.MainJobMasterLevel,
                     SubJob = _pl.Player.SubJob,
                     SubJobLevel = _pl.Player.SubJobLevel,
                     ZoneId = _pl.Player.ZoneId,
@@ -137,6 +151,7 @@ namespace CurePlease.Core
                     members.Add(new PartyMemberState
                     {
                         MemberNumber = m.MemberNumber,
+                        PartyIndex = (byte)(m.MemberNumber / 6),
                         EntityIndex = m.Index,
                         Name = m.Name ?? string.Empty,
                         ServerId = m.ID,
@@ -161,6 +176,20 @@ namespace CurePlease.Core
                     Player = player,
                     PartyMembers = members,
                 };
+
+                try
+                {
+                    EliteAPI.AllianceInfo alliance = _pl.Party.GetAllianceInfo();
+                    snapshot.Alliance = new AllianceState
+                    {
+                        PartyCounts = new[] { alliance.Party0Count, alliance.Party1Count, alliance.Party2Count },
+                        PartyLeaderIds = new[] { (uint)alliance.Party0LeaderId, (uint)alliance.Party1LeaderId, (uint)alliance.Party2LeaderId },
+                    };
+                }
+                catch
+                {
+                    // Alliance info is display/metadata only — never fail the snapshot over it.
+                }
 
                 EliteAPI.TargetInfo target = _pl.Target.GetTargetInfo();
                 if (target != null)
@@ -350,6 +379,7 @@ namespace CurePlease.Core
                         Name = entity.Name,
                         ServerId = entity.ServerID,
                         Status = entity.Status,
+                        TargetIndex = entity.TargetingIndex,
                         Distance = entity.Distance,
                         X = entity.X,
                         Y = entity.Y,
@@ -359,6 +389,41 @@ namespace CurePlease.Core
             }
 
             return null;
+        }
+
+        /// <summary>Reads the entity-array slot directly (resolve a TargetIndex to a name).</summary>
+        public virtual EntityInfo FindEntityByIndex(int index)
+        {
+            if (_pl == null || index <= 0)
+            {
+                return null;
+            }
+
+            try
+            {
+                EliteAPI.XiEntity entity = _pl.Entity.GetEntity(index);
+                if (entity == null || string.IsNullOrEmpty(entity.Name))
+                {
+                    return null;
+                }
+
+                return new EntityInfo
+                {
+                    Index = index,
+                    Name = entity.Name,
+                    ServerId = entity.ServerID,
+                    Status = entity.Status,
+                    TargetIndex = entity.TargetingIndex,
+                    Distance = entity.Distance,
+                    X = entity.X,
+                    Y = entity.Y,
+                    Z = entity.Z,
+                };
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         /// <summary>3D distance in yalms between two entity-array slots; float.MaxValue when either is unreadable.</summary>
@@ -576,6 +641,77 @@ namespace CurePlease.Core
             catch
             {
                 return 0;
+            }
+        }
+
+        /// <summary>
+        /// Raw recast remaining for a recast TIMER id (e.g. Stratagems.TimerId). Needed
+        /// because several abilities share one timer — a name-based lookup resolves to
+        /// the shared timer and cannot tell individual charges apart.
+        /// </summary>
+        public virtual int GetAbilityRecastByTimerId(int timerId)
+        {
+            if (_pl == null)
+            {
+                return 0;
+            }
+
+            try
+            {
+                List<int> timerIds = _pl.Recast.GetAbilityIds();
+                for (int i = 0; i < timerIds.Count; i++)
+                {
+                    if (timerIds[i] == timerId)
+                    {
+                        return _pl.Recast.GetAbilityRecast(i);
+                    }
+                }
+
+                return 0;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        /// <summary>
+        /// Job points spent on the given job (0 when detached or unreadable). Only the
+        /// main job's spent points matter in-game — sub job gifts do not apply.
+        /// </summary>
+        public virtual int GetSpentJobPoints(int jobId)
+        {
+            if (_pl == null)
+            {
+                return 0;
+            }
+
+            try
+            {
+                return _pl.Player.GetJobPoints(jobId).SpentJobPoints;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        /// <summary>True when the named item resolves in resources and its id is in the owned scan.</summary>
+        public virtual bool OwnsItem(string itemName)
+        {
+            if (_pl == null || string.IsNullOrWhiteSpace(itemName))
+            {
+                return false;
+            }
+
+            try
+            {
+                EliteAPI.IItem item = _pl.Resources.GetItem(itemName.Trim(), 0);
+                return item != null && item.ItemID != 0 && GetOwnedItemIds().Contains((int)item.ItemID);
+            }
+            catch
+            {
+                return false;
             }
         }
 

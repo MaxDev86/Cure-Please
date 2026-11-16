@@ -26,6 +26,14 @@ namespace CurePlease.Core
         public byte SubJobLevel { get; set; }
         public bool Active { get; set; }
 
+        /// <summary>
+        /// Which party of the alliance this slot belongs to: 0 = own party (slots
+        /// 0-5), 1/2 = alliance parties (slots 6-11 / 12-17). Live-verified: the
+        /// client always shows the reader's own party in slots 0-5. AoE spells
+        /// (Curaga, Protectra, Accession) only hit party index 0.
+        /// </summary>
+        public byte PartyIndex { get; set; }
+
         /// <summary>Estimated HP missing, derived from HPP (0 when HPP is 0 or 100).</summary>
         public uint EstimatedHpLoss
         {
@@ -56,6 +64,7 @@ namespace CurePlease.Core
         public uint MPMax { get; set; }
         public byte MainJob { get; set; }
         public byte MainJobLevel { get; set; }
+        public int MainJobMasterLevel { get; set; }
         public byte SubJob { get; set; }
         public byte SubJobLevel { get; set; }
         public int ZoneId { get; set; }
@@ -89,6 +98,18 @@ namespace CurePlease.Core
         }
     }
 
+    /// <summary>Alliance composition from the client's alliance block (leader ids + per-party member counts).</summary>
+    public sealed class AllianceState
+    {
+        /// <summary>Visible member counts for own party / alliance party 1 / alliance party 2.</summary>
+        public byte[] PartyCounts { get; set; } = new byte[3];
+
+        /// <summary>Server ids of each party's leader (0 when that party is absent).</summary>
+        public uint[] PartyLeaderIds { get; set; } = new uint[3];
+
+        public bool IsInAlliance => PartyCounts[1] > 0 || PartyCounts[2] > 0;
+    }
+
     /// <summary>
     /// One consistent read of everything the engine needs for a decision tick.
     /// Built once per tick by <see cref="GameStateService"/> and shared by all modules.
@@ -102,6 +123,9 @@ namespace CurePlease.Core
 
         /// <summary>All 18 party/alliance slots; check <see cref="PartyMemberState.Active"/>.</summary>
         public IReadOnlyList<PartyMemberState> PartyMembers { get; set; } = Array.Empty<PartyMemberState>();
+
+        /// <summary>Alliance composition; IsInAlliance false for solo/single party.</summary>
+        public AllianceState Alliance { get; set; } = new AllianceState();
 
         /// <summary>Current main target's server id; 0 when nothing is targeted.</summary>
         public uint TargetId { get; set; }
