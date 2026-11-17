@@ -1,8 +1,8 @@
-_addon.name = 'CurePleaseNext'
+_addon.name = 'CurePlease3'
 _addon.author = 'Daniel_H, CurePlease v3 team'
 _addon.version = '2.0 Windower'
 _addon_description = 'Party buff reports, cast outcome events, and landing reports for CurePlease v3'
-_addon.commands = {'cpnext'}
+_addon.commands = {'cp3'}
 
 -- Protocol v2 (UDP, default 127.0.0.1:19771):
 --   CUREPLEASE_buffs_<Name>_<id1,id2,...>            own-party buff dump (from 0x076)
@@ -10,10 +10,10 @@ _addon.commands = {'cpnext'}
 --   CUREPLEASE_casting2_<CharName>_finished          cast outcome, name-keyed (multi-instance safe)
 --   CUREPLEASE_casting2_<CharName>_interrupted
 --   CUREPLEASE_casting2_<CharName>_blocked
---   CUREPLEASE_confirmed_<CharName>                  handshake reply to //cpnext verify (name-keyed)
+--   CUREPLEASE_confirmed_<CharName>                  handshake reply to //cp3 verify (name-keyed)
 --   CUREPLEASE_confirmed                             legacy handshake (kept for older apps)
 --   CUREPLEASE_chat_<Name>_<mode>_<color>_<text>     chat feed (port 19770, fixed)
--- Inbound (app -> game): //cpnext log <text> prints an app alert to the LOCAL chat
+-- Inbound (app -> game): //cp3 log <text> prints an app alert to the LOCAL chat
 -- log only (add_to_chat never reaches the server).
 
 local port = 19771
@@ -71,10 +71,10 @@ windower.register_event('addon command', function(input, ...)
         if args[1] and args[2] then
             ip = args[1]
             port = tonumber(args[2])
-            windower.add_to_chat(1, '\31\200[\31\05CurePleaseNext\31\200]\31\207 NETWORK UPDATE: IP ' .. ip .. " / Port " .. port)
+            windower.add_to_chat(1, '\31\200[\31\05CurePlease3\31\200]\31\207 NETWORK UPDATE: IP ' .. ip .. " / Port " .. port)
         end
     elseif cmd == "check" then
-        windower.add_to_chat(1, '\31\200[\31\05CurePleaseNext\31\200]\31\207 IP ' .. ip .. " / Port " .. port)
+        windower.add_to_chat(1, '\31\200[\31\05CurePlease3\31\200]\31\207 IP ' .. ip .. " / Port " .. port)
     elseif cmd == "verify" then
         send("CUREPLEASE_confirmed_" .. player_name())
         send("CUREPLEASE_confirmed") -- legacy format for older apps

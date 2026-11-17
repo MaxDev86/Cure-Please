@@ -1,7 +1,7 @@
 <Window x:Class="CurePlease.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Cure Please" Height="640" Width="1000">
+        Title="CurePlease3" Height="640" Width="1000">
     <Grid Margin="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -31,7 +31,11 @@
         <!-- Active profile + auto-switch preference (global, not per-profile) -->
         <StackPanel Orientation="Horizontal" Grid.Row="1" Margin="0,0,0,4">
             <TextBlock Text="Profile:" VerticalAlignment="Center" Foreground="Gray"/>
-            <TextBlock x:Name="ActiveProfileText" Text="(none)" VerticalAlignment="Center" Margin="4,0,12,0" FontWeight="Bold"/>
+            <ComboBox x:Name="ActiveProfileBox" Width="200" Margin="4,0,12,0"
+                      IsEditable="True" IsReadOnly="True" IsSynchronizedWithCurrentItem="False"
+                      DropDownOpened="ActiveProfileBox_DropDownOpened"
+                      SelectionChanged="ActiveProfileBox_SelectionChanged"
+                      ToolTip="Pick a profile manually. It sticks until a job/character change (or forever when auto-switch is off)."/>
             <CheckBox x:Name="AutoSwitchBox" Content="Auto-switch on job/character change"
                       VerticalAlignment="Center" Checked="AutoSwitchBox_Toggled" Unchecked="AutoSwitchBox_Toggled"
                       ToolTip="Off = the manually picked profile stays active across job/character changes (a notice is logged instead)."/>
@@ -43,7 +47,7 @@
             <TextBlock x:Name="JobStatsText" Text="" FontFamily="Consolas" FontWeight="Bold"
                        VerticalAlignment="Center" Margin="16,0,0,0"/>
             <Button x:Name="JobInfoButton" Content="More Info…" Padding="6,0" Margin="8,0,0,0"
-                    VerticalAlignment="Center" Click="JobInfoButton_Click"
+                    VerticalAlignment="Center" Click="JobInfoButton_Click" Visibility="Collapsed"
                     ToolTip="All jobs: level, mastery, job points"/>
         </StackPanel>
 

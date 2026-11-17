@@ -55,7 +55,7 @@ Shared by design (keep one):
 
 ## Cross-talk problems to solve
 
-1. ~~**Addon cast events are not name-keyed.**~~ **Done** (CurePleaseNext addon
+1. ~~**Addon cast events are not name-keyed.**~~ **Done** (CurePlease3 addon
    rewrite): v2 sends `CUREPLEASE_casting2_<Name>_<finished|interrupted|
    blocked>` and `CUREPLEASE_confirmed_<Name>` (plus the bare legacy handshake);
    `AddonListener.TryParseCastEvent` / `TryParseHandshake` parse both v1 (caster

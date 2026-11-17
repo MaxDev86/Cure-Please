@@ -17,13 +17,13 @@ namespace CurePlease.Core
     }
 
     /// <summary>
-    /// Listens for the CurePleaseNext Windower addon's UDP messages and exposes
+    /// Listens for the CurePlease3 Windower addon's UDP messages and exposes
     /// them as typed, timestamped state. Replaces the legacy AddonReader
     /// BackgroundWorker (swallowed errors, infinite restart, no staleness).
     ///
     /// Protocol (port 19771 by default; legacy addon used 19769):
     ///   CUREPLEASE_buffs_&lt;Name&gt;_&lt;id1,id2,...&gt;   full buff list for a party member
-    ///   CUREPLEASE_confirmed_&lt;CharName&gt;               v2 handshake reply to //cpnext verify
+    ///   CUREPLEASE_confirmed_&lt;CharName&gt;               v2 handshake reply to //cp3 verify
     ///   CUREPLEASE_confirmed                            legacy handshake (no sender name)
     ///   CUREPLEASE_casting2_&lt;CharName&gt;_finished|interrupted|blocked
     ///                                                     v2 cast outcome events, name-keyed so
@@ -61,7 +61,7 @@ namespace CurePlease.Core
         /// </summary>
         public event Action<int, string[]> SpellLanded;
 
-        /// <summary>Fires when the addon answers a //cpnext verify handshake. Argument is the character name (v2) or null (legacy).</summary>
+        /// <summary>Fires when the addon answers a //cp3 verify handshake. Argument is the character name (v2) or null (legacy).</summary>
         public event Action<string> Handshake;
 
         /// <summary>Fires on listener errors (bind failures, malformed packets are counted, not reported).</summary>

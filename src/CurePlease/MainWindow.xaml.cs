@@ -32,6 +32,12 @@ namespace CurePlease
         private readonly Dictionary<string, PlayerBuffsPopup> _buffPopups = new Dictionary<string, PlayerBuffsPopup>(StringComparer.OrdinalIgnoreCase);
         private string _lastPlayerName = "";
         private PlayerJobsWindow _jobsWindow;
+        private bool _profileComboGuard;
+        private bool _addonLoadPending;
+        private byte _lastMainJob;
+        private byte _lastSubJob;
+        private byte _lastMainJobLevel;
+        private byte _lastSubJobLevel;
 
         // Job stats change rarely; re-read at most every 10 s or on job/character change.
         private List<JobStatusRow> _jobStats;
@@ -150,11 +156,29 @@ namespace CurePlease
                 Serilog.Log.Information("Connection state: {State}{Error}", state,
                     state == ConnectionState.Lost && _state.LastError != null ? " (" + _state.LastError + ")" : string.Empty);
                 StartButton.IsEnabled = state == ConnectionState.Connected && !_engine.IsRunning;
+                JobInfoButton.Visibility = state == ConnectionState.Connected ? Visibility.Visible : Visibility.Collapsed;
+                AttachButton.Content = _state.IsAttached ? "Detach" : "Attach";
+                if (state != ConnectionState.Connected)
+                {
+                    Title = "CurePlease3";
+                    JobStatsText.Text = string.Empty;
+                }
 
                 if (state == ConnectionState.Connected)
                 {
+                    // Once per attach: load the addon and push the configured UDP port
+                    // (same order legacy used). An already-loaded addon just prints a
+                    // harmless "already loaded" notice in the client console.
+                    if (_addonLoadPending)
+                    {
+                        _addonLoadPending = false;
+                        _state.SendCommand("//lua load CurePlease3");
+                        _state.SendCommand("//cp3 settings 127.0.0.1 " + _settings.Current.Addon.Port);
+                        AppendLog("Sent addon load (CurePlease3, port " + _settings.Current.Addon.Port + ")");
+                    }
+
                     // Ask the addon to confirm itself (harmless when not loaded).
-                    _state.SendCommand("//cpnext verify");
+                    _state.SendCommand("//cp3 verify");
                 }
             }));
 
@@ -210,6 +234,12 @@ namespace CurePlease
 
         private void AttachButton_Click(object sender, RoutedEventArgs e)
         {
+            if (_state.IsAttached)
+            {
+                DetachFromGame();
+                return;
+            }
+
             if (!(PlPidBox.SelectedItem is GameProcessInfo pl))
             {
                 AppendLog("Select the PL character first");
@@ -219,6 +249,7 @@ namespace CurePlease
             try
             {
                 _state.Attach(pl.Pid);
+                _addonLoadPending = true; // fires on the first Connected state
                 _playerBuffs.Clear(); // session assignments belong to the previous party
                 AppendLog("Attached to " + pl.DisplayName);
 
@@ -251,10 +282,15 @@ namespace CurePlease
 
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
-            var window = new SettingsWindow(_settings, _profiles, _globals) { Owner = this };
-            if (window.ShowDialog() == true)
+            var window = new SettingsWindow(_settings, _profiles, _globals,
+                suggestedProfileName: SuggestProfileName(), buffFilter: SuggestBuffFilter()) { Owner = this };
+
+            // Profile ops inside the dialog (Save As/Duplicate/Delete) change the active
+            // profile even when the dialog is cancelled — always refresh.
+            window.ShowDialog();
+            UpdateActiveProfileLabel();
+            if (window.DialogResult == true)
             {
-                UpdateActiveProfileLabel();
                 AppendLog("Settings saved to profile " + (_profiles.ActiveName ?? "(none)"));
             }
         }
@@ -297,6 +333,30 @@ namespace CurePlease
             }
         }
 
+        /// <summary>
+        /// Unloads the addon (chat command needs a live connection; silently skipped
+        /// when the client is gone — the addon dies with it anyway), stops the
+        /// engine, and detaches. Called by the Attach toggle and on window close.
+        /// </summary>
+        private void DetachFromGame()
+        {
+            if (_engine.IsRunning)
+            {
+                _engine.Stop();
+                StartButton.Content = "Start";
+            }
+
+            if (_state.SendCommand("//lua unload CurePlease3"))
+            {
+                AppendLog("Sent addon unload (CurePlease3)");
+            }
+
+            _addonLoadPending = false;
+            _state.Detach();
+            _playerBuffs.Clear();
+            AppendLog("Detached");
+        }
+
         private void PauseButton_Click(object sender, RoutedEventArgs e)
         {
             CurePleaseSettings updated = _settings.Current.DeepClone();
@@ -336,6 +396,7 @@ namespace CurePlease
         {
             if (snapshot == null)
             {
+                Title = "CurePlease3";
                 PlayerText.Text = "—";
                 JobStatsText.Text = string.Empty;
                 _jobStatsKey = string.Empty;
@@ -345,6 +406,15 @@ namespace CurePlease
 
             PlayerState pl = snapshot.Player;
             _lastPlayerName = pl.Name ?? "";
+            _lastMainJob = pl.MainJob;
+            _lastSubJob = pl.SubJob;
+            _lastMainJobLevel = pl.MainJobLevel;
+            _lastSubJobLevel = pl.SubJobLevel;
+
+            string titleJob = ProfileService.JobAbbreviation(pl.MainJob) ?? pl.MainJob.ToString();
+            string titleSub = ProfileService.JobAbbreviation(pl.SubJob);
+            Title = "CurePlease3 - " + pl.Name + " " + titleJob + pl.MainJobLevel
+                + (titleSub != null ? "/" + titleSub + pl.SubJobLevel : string.Empty);
             PlayerText.Text = string.Format(
                 "{0}  HP {1}/{2} ({3}%)  MP {4}/{5}  TP {6}  Job {7}/{8}  Zone {9}  Buffs: {10}",
                 pl.Name, pl.HP, pl.HPMax, pl.HPP, pl.MP, pl.MPMax, pl.TP,
@@ -425,8 +495,10 @@ namespace CurePlease
 
             if (row.IsSelf)
             {
-                var window = new SettingsWindow(_settings, _profiles, _globals, "Buff Upkeep") { Owner = this };
+                var window = new SettingsWindow(_settings, _profiles, _globals, "Buff Upkeep",
+                    SuggestProfileName(), SuggestBuffFilter()) { Owner = this };
                 window.ShowDialog();
+                UpdateActiveProfileLabel();
                 return;
             }
 
@@ -451,7 +523,65 @@ namespace CurePlease
 
         private void UpdateActiveProfileLabel()
         {
-            ActiveProfileText.Text = _profiles.ActiveName ?? "(none)";
+            _profileComboGuard = true;
+            try
+            {
+                var names = _profiles.ListProfiles();
+                string active = _profiles.ActiveName;
+                ActiveProfileBox.ItemsSource = names;
+                ActiveProfileBox.SelectedItem = active == null
+                    ? null
+                    : names.FirstOrDefault(n => n.Equals(active, StringComparison.OrdinalIgnoreCase));
+                ActiveProfileBox.Text = active ?? "(none)";
+            }
+            finally
+            {
+                _profileComboGuard = false;
+            }
+        }
+
+        private void ActiveProfileBox_DropDownOpened(object sender, EventArgs e)
+        {
+            // Pick up profiles created/duplicated/deleted while the window was open.
+            UpdateActiveProfileLabel();
+        }
+
+        private void ActiveProfileBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (_profileComboGuard || !(ActiveProfileBox.SelectedItem is string name))
+            {
+                return;
+            }
+
+            if (_profiles.ActiveName != null && name.Equals(_profiles.ActiveName, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            // SwitchTo fires ProfileSwitched, which refreshes the combo and logs.
+            _profiles.SwitchTo(name);
+        }
+
+        /// <summary>"Charname_MAIN_SUB" from the last snapshot, for the settings window's Save As prompt.</summary>
+        private string SuggestProfileName()
+        {
+            return _lastPlayerName.Length > 0 && _lastMainJob != 0
+                ? ProfileService.ProfileNameFor(_lastPlayerName, _lastMainJob, _lastSubJob)
+                : null;
+        }
+
+        /// <summary>Buff Upkeep filter preset from the attached character's job combo; null when detached.</summary>
+        private BuffFilterPreset SuggestBuffFilter()
+        {
+            return _lastPlayerName.Length > 0 && _lastMainJob != 0
+                ? new BuffFilterPreset
+                {
+                    MainJob = _lastMainJob,
+                    MainLevel = _lastMainJobLevel,
+                    SubJob = _lastSubJob,
+                    SubLevel = _lastSubJobLevel,
+                }
+                : null;
         }
 
         private void UpdatePauseButton()
@@ -480,6 +610,13 @@ namespace CurePlease
         {
             await _engine.StopAsync();
             _addon.Dispose();
+
+            // Closing detaches, and detaching unloads the addon from the client.
+            if (_state.IsAttached)
+            {
+                _state.SendCommand("//lua unload CurePlease3");
+            }
+
             _state.Detach();
         }
 

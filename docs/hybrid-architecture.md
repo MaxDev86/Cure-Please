@@ -2,7 +2,7 @@
 
 Status: **current architecture, deliberate.** Cure-Please reads game state through
 FFXI.Memory (part LuaCore-anchored, part FFXiMain-anchored) and exchanges events
-and actions with the game through the CurePleaseNext Windower addon. This doc is
+and actions with the game through the CurePlease3 Windower addon. This doc is
 the design rationale and the long-term shape. The offset-level detail lives in
 FFXI.Memory/docs/windower-dependency.md (dependency map + removal plan) and
 FFXI.Memory/docs/maps.md (offset provenance).
@@ -16,7 +16,7 @@ FFXI.Memory/docs/maps.md (offset provenance).
 | State reads (HP/MP, buffs, party/alliance, recasts, master levels, …) | **Memory** via FFXI.Memory | Polling is continuous; lua→app latency on every tick is the net-lag we want to avoid. Reads are idempotent — a stale byte fails safe. |
 | Event push (cast outcomes, per-target landings, chat feed) | **Addon → UDP** (127.0.0.1:19771/19770) | Events are inherently push, not poll. The addon sees them the frame they happen; memory would need high-rate polling and still miss transients. Name-keyed protocol v2 (multi-instance safe). |
 | Action commands (`/ma`, `/ja`, items) | **App → game input** via Windower shared memory (SendString) | The client executes them as if typed; server sees normal player input. |
-| In-game alerts to the user | **App → `//cpnext log` → `add_to_chat`** | Client-side chat-log write only. Never `/echo` — that round-trips the FFXI server (outgoing chat packet 0x0B5). |
+| In-game alerts to the user | **App → `//cp3 log` → `add_to_chat`** | Client-side chat-log write only. Never `/echo` — that round-trips the FFXI server (outgoing chat packet 0x0B5). |
 
 ## What we verified before committing to this
 

@@ -604,7 +604,7 @@ namespace CurePlease.Settings
     {
         public bool Enabled { get; set; } = true;
 
-        /// <summary>UDP port the addon sends to (CurePleaseNext default 19771; legacy addon uses 19769).</summary>
+        /// <summary>UDP port the addon sends to (CurePlease3 default 19771; legacy addon uses 19769).</summary>
         public int Port { get; set; } = 19771;
 
         /// <summary>Buff data older than this is treated as stale and ignored.</summary>
