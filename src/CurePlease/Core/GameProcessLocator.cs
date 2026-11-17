@@ -10,7 +10,7 @@ namespace CurePlease.Core
         public int Pid { get; set; }
         public string CharacterName { get; set; }
 
-        /// <summary>"Alternate (40956)"; falls back to the bare PID before login.</summary>
+        /// <summary>"Charname (40956)"; falls back to the bare PID before login.</summary>
         public string DisplayName =>
             string.IsNullOrWhiteSpace(CharacterName) ? "(" + Pid + ")" : CharacterName + " (" + Pid + ")";
 

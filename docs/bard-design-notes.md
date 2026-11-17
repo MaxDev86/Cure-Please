@@ -242,8 +242,8 @@ instrument (Daurdabla etc.) for, WITHOUT duration gear.** Dummies are the
 overwrite targets; if a dummy gets the full duration set it outlives real
 songs and the positional overwrite math breaks.
 
-Reference implementation (user-verified): `Alternate_BRD.lua` (Mote-Include
-v2) lines 423–424 —
+Reference implementation (user-verified): the user's Mote-Include v2 BRD lua
+(`<Character>_BRD.lua`) lines 423–424 —
 
 ```lua
 sets.midcast['Army\'s Paeon']    = set_combine(sets.precast.FC.BardSong, {range=info.ExtraSongInstrument})

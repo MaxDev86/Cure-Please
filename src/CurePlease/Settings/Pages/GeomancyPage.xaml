@@ -86,7 +86,7 @@
                        TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,6"/>
             <CheckBox Content="Establish hate for offensive luopons"
                       IsChecked="{Binding EnmityAssist, UpdateSourceTrigger=PropertyChanged}"/>
-            <TextBlock Text="Player whose target is the enemy (the tank or DD, e.g. Bazek; also receives the spell in party mode):"
+            <TextBlock Text="Player whose target is the enemy (the tank or DD; also receives the spell in party mode):"
                        Margin="0,4,0,0"/>
             <TextBox Text="{Binding EnmityPlayerName, UpdateSourceTrigger=PropertyChanged}"
                      Width="160" HorizontalAlignment="Left" Margin="0,2,0,0"/>

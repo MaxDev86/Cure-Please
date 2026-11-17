@@ -65,7 +65,7 @@ Shared by design (keep one):
 2. **Profile file collisions.** Two tabs on the same job combo load the same
    JSON file; Save = last writer wins. Policies, cheapest first: (a) warn when
    two tabs hold the same profile name; (b) encourage character-prefixed
-   profiles (`Alternate_WHM_SCH.json`) — the auto-switch already prefers them;
+   profiles (`Charname_WHM_SCH.json`) — the auto-switch already prefers them;
    (c) later: file-watcher reload. Recommend (a)+(b).
 3. **PID uniqueness.** The UI must stop two tabs from attaching the same
    process as PL (two engines driving one character = chaos). Monitored PID

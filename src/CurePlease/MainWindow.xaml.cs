@@ -63,7 +63,7 @@ namespace CurePlease
             // Profiles live next to the exe (<exe>\profiles), app-level UI prefs in
             // <exe>\global_settings.json. Startup: load the default profile; on first
             // run migrate the old %appdata% settings file into it so existing setups
-            // keep working. Job-combo profiles (WHM_SCH.json, Alternate_BRD_NIN.json,
+            // keep working. Job-combo profiles (WHM_SCH.json, Charname_BRD_NIN.json,
             // ...) auto-switch on context changes unless the global sticky-profile
             // preference is off.
             _globals.Load();

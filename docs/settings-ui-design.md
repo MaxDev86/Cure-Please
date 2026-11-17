@@ -8,7 +8,7 @@ the UI is built.
 ## Profiles and job combos
 
 Profiles are per job combo (`ProfileService`, `<exe>\profiles\`,
-`WHM_SCH.json`, optional `Alternate_BRD_NIN.json` character prefix) and
+`WHM_SCH.json`, optional `Charname_BRD_NIN.json` character prefix) and
 auto-switch with the logged-in character — same scheme as the legacy
 `MAIN_SUB.xml` files (the legacy settings window's bottom bar).
 
@@ -112,7 +112,7 @@ window. Legacy import maps `rapture` and counts it toward `Sch.Enabled`.
 The nav is built by `SettingsNavigation.Build` (pure, harness-tested).
 Feature pages always show. A checkbox under the nav — visible only when
 the profile name encodes a combo (parsed by
-`ProfileService.TryComboFromProfileName`, e.g. `Alternate_WHM_SCH`) —
+`ProfileService.TryComboFromProfileName`, e.g. `Charname_WHM_SCH`) —
 trims job pages to main+sub, labeling the sub page "(sub)". **Off by
 default: nothing is ever hidden unless the user asks**, the filter is a
 view preference only (the settings model keeps every section), an

@@ -10,7 +10,7 @@ namespace CurePlease.Settings
     /// Job-combo profiles. A profile is one complete <see cref="CurePleaseSettings"/>
     /// stored as JSON in <c>&lt;exe&gt;\profiles\</c>, named legacy-style:
     /// <c>WHM_SCH.json</c>, <c>BRD_NIN.json</c>, <c>WHM.json</c> (no sub job), with an
-    /// optional character prefix (<c>Alternate_BRD_NIN.json</c>) for per-character
+    /// optional character prefix (<c>Charname_BRD_NIN.json</c>) for per-character
     /// overrides — the same scheme legacy used for its XML files.
     ///
     /// The UI reads the player's job every snapshot, so a /job change or a login on
@@ -92,7 +92,7 @@ namespace CurePlease.Settings
             return sub == null ? main : main + "_" + sub;
         }
 
-        /// <summary>Character-specific profile name ("Alternate_BRD_NIN"); falls back to the combo name.</summary>
+        /// <summary>Character-specific profile name ("Charname_BRD_NIN"); falls back to the combo name.</summary>
         public static string ProfileNameFor(string characterName, byte mainJob, byte subJob)
         {
             string combo = ComboNameFor(mainJob, subJob);
@@ -107,7 +107,7 @@ namespace CurePlease.Settings
 
         /// <summary>
         /// Recovers the job combo encoded in a profile name — the trailing JOB or
-        /// JOB_JOB tokens ("Alternate_WHM_SCH" -> WHM/SCH). FFXI character names are
+        /// JOB_JOB tokens ("Charname_WHM_SCH" -> WHM/SCH). FFXI character names are
         /// letters-only and job abbreviations are compared case-sensitively, so a
         /// leading non-abbreviation token is a character prefix. False when no combo
         /// can be read (e.g. "default" or a hand-named profile) — callers must fail
