@@ -27,7 +27,7 @@ namespace CurePlease.Settings.Pages
             Settings = settings;
             settings.Buffs.EnsureSeeded();
             Rows = new ObservableCollection<BuffGroupEditModel>(
-                BuffCatalog.Groups().Select(g => new BuffGroupEditModel(settings, g.Key, g.Value)));
+                BuffCatalog.Groups().Select(g => new BuffGroupEditModel(this, settings, g.Key, g.Value)));
 
             foreach (BuffGroupEditModel row in Rows)
             {
@@ -37,6 +37,52 @@ namespace CurePlease.Settings.Pages
                     row.WireExclusivity(key, DisableSiblings);
                 }
             }
+        }
+
+        // --- Filter state (view-only; never persisted into the profile) ---
+
+        /// <summary>Job id to filter rows by as main job; 0 = no main-job filter.</summary>
+        public int FilterMainJob { get; set; }
+        public int FilterMainLevel { get; set; } = 99;
+
+        /// <summary>Job id to filter rows by as sub job; 0 = no sub-job filter.</summary>
+        public int FilterSubJob { get; set; }
+        public int FilterSubLevel { get; set; } = 49;
+
+        /// <summary>Case-insensitive substring matched against group name, member spells, and notes.</summary>
+        public string SearchText { get; set; } = string.Empty;
+
+        /// <summary>When true, only rows currently enabled in this profile stay visible.</summary>
+        public bool EnabledOnly { get; set; }
+
+        /// <summary>All active filters AND-ed. Job filter: a row passes when any member spell is castable by the main OR the sub job at their filter levels.</summary>
+        public bool RowVisible(BuffGroupEditModel row)
+        {
+            if (EnabledOnly && !row.Enabled)
+            {
+                return false;
+            }
+
+            if (SearchText.Length > 0)
+            {
+                bool match = row.Group.IndexOf(SearchText, System.StringComparison.OrdinalIgnoreCase) >= 0
+                    || row.Members.Any(m =>
+                        m.Spell.IndexOf(SearchText, System.StringComparison.OrdinalIgnoreCase) >= 0
+                        || (m.Notes != null && m.Notes.IndexOf(SearchText, System.StringComparison.OrdinalIgnoreCase) >= 0));
+                if (!match)
+                {
+                    return false;
+                }
+            }
+
+            if (FilterMainJob == 0 && FilterSubJob == 0)
+            {
+                return true;
+            }
+
+            return row.Members.Any(m =>
+                (FilterMainJob != 0 && BuffCatalog.CastableBy(m.Spell, FilterMainJob, FilterMainLevel, isMainJob: true))
+                || (FilterSubJob != 0 && BuffCatalog.CastableBy(m.Spell, FilterSubJob, FilterSubLevel, isMainJob: false)));
         }
 
         private static string ExclusiveKeyFor(BuffGroupEditModel row)
@@ -104,26 +150,75 @@ namespace CurePlease.Settings.Pages
         {
             // Rows write through to the clone; nothing to flush.
         }
+
+        /// <summary>Re-notifies every row's spell list after a job-filter change.</summary>
+        public void NotifySpellListsChanged()
+        {
+            foreach (BuffGroupEditModel row in Rows)
+            {
+                row.NotifyFilterChanged();
+            }
+        }
+
+        /// <summary>
+        /// The dropdown contents for a row under the current job filter: members
+        /// castable by the filter's main or sub job. A STORED selection (explicit
+        /// GroupSelection or an enabled member) is always kept in the list so the
+        /// view filter never silently rewrites the profile; the implicit
+        /// "first member" default is not protected.
+        /// </summary>
+        internal IReadOnlyList<string> SpellsForRow(BuffGroupEditModel row)
+        {
+            if (FilterMainJob == 0 && FilterSubJob == 0)
+            {
+                return row.AllSpells;
+            }
+
+            var filtered = new List<string>();
+            foreach (BuffCatalogEntry member in row.Members)
+            {
+                if ((FilterMainJob != 0 && BuffCatalog.CastableBy(member.Spell, FilterMainJob, FilterMainLevel, isMainJob: true))
+                    || (FilterSubJob != 0 && BuffCatalog.CastableBy(member.Spell, FilterSubJob, FilterSubLevel, isMainJob: false)))
+                {
+                    filtered.Add(member.Spell);
+                }
+            }
+
+            string selected = row.RawSelectedSpell;
+            if (selected != null && row.HasStoredSelection && !filtered.Contains(selected))
+            {
+                int at = row.AllSpells.IndexOf(selected);
+                filtered.Insert(at >= 0 && at <= filtered.Count ? at : filtered.Count, selected);
+            }
+
+            return filtered;
+        }
     }
 
     /// <summary>One buff group row. The selected spell's BuffEntry carries the state.</summary>
     public sealed class BuffGroupEditModel : INotifyPropertyChanged
     {
+        private readonly BuffsEditModel _owner;
         private readonly CurePleaseSettings _settings;
         private readonly List<BuffCatalogEntry> _members;
         private System.Action<string, BuffGroupEditModel> _exclusiveDisable;
 
-        public BuffGroupEditModel(CurePleaseSettings settings, string group, List<BuffCatalogEntry> members)
+        public BuffGroupEditModel(BuffsEditModel owner, CurePleaseSettings settings, string group, List<BuffCatalogEntry> members)
         {
+            _owner = owner;
             _settings = settings;
             _members = members;
             Group = group;
-            Spells = members.Select(m => m.Spell).ToList();
+            AllSpells = members.Select(m => m.Spell).ToList();
         }
 
         public string Group { get; }
 
-        public IReadOnlyList<string> Spells { get; }
+        /// <summary>Every member spell, unfiltered, in catalog order.</summary>
+        internal List<string> AllSpells { get; }
+
+        /// <summary>Dropdown contents: all members, or the job-filtered subset (selection always kept).</summary>
+        public IReadOnlyList<string> Spells => _owner != null ? _owner.SpellsForRow(this) : AllSpells;
 
         /// <summary>Catalog entries behind this row (exposed for the exclusivity wiring).</summary>
         public IReadOnlyList<BuffCatalogEntry> Members => _members;
@@ -148,8 +243,13 @@ namespace CurePlease.Settings.Pages
 
         private BuffEntry CurrentEntry => EntryOf(SelectedSpell);
 
-        /// <summary>The chosen spell: the stored group selection, else the enabled member, else the first member.</summary>
-        public string SelectedSpell
+        /// <summary>True when the group has a real choice on record (explicit selection or an enabled member) — the "first member" default is not one.</summary>
+        internal bool HasStoredSelection =>
+            _settings.Buffs.GroupSelection.ContainsKey(Group)
+            || _settings.Buffs.Entries.Any(e => e.Enabled && _members.Any(m => m.Spell == e.Spell));
+
+        /// <summary>The stored/enabled/first-member resolution, without the view filter applied.</summary>
+        internal string RawSelectedSpell
         {
             get
             {
@@ -162,6 +262,29 @@ namespace CurePlease.Settings.Pages
                 BuffEntry enabled = _settings.Buffs.Entries.FirstOrDefault(
                     e => e.Enabled && _members.Any(m => m.Spell == e.Spell));
                 return enabled != null ? enabled.Spell : _members[0].Spell;
+            }
+        }
+
+        /// <summary>The chosen spell: the stored group selection, else the enabled member, else the first member.</summary>
+        public string SelectedSpell
+        {
+            get
+            {
+                string resolved = RawSelectedSpell;
+
+                // With a job filter active and no stored choice, display the first
+                // CASTABLE member instead of an invisible implicit default (view-only;
+                // nothing is written until the user actually changes something).
+                if (_owner != null && !HasStoredSelection)
+                {
+                    IReadOnlyList<string> visible = Spells;
+                    if (!visible.Contains(resolved) && visible.Count > 0)
+                    {
+                        return visible[0];
+                    }
+                }
+
+                return resolved;
             }
             set
             {
@@ -280,6 +403,13 @@ namespace CurePlease.Settings.Pages
                     default: return string.Empty;
                 }
             }
+        }
+
+        /// <summary>Called by the edit model when the job filter changed — the dropdown contents may differ.</summary>
+        internal void NotifyFilterChanged()
+        {
+            Notify(nameof(Spells));
+            Notify(nameof(HasChoices));
         }
 
         private void Notify(string name)

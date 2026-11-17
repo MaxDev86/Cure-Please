@@ -267,6 +267,41 @@ namespace CurePlease.Core
                 : null;
         }
 
+        /// <summary>Job levels for a spell (job id -> level learned), generated from spells.lua; null when unknown.</summary>
+        public static IReadOnlyDictionary<int, int> LevelsOf(string spellName)
+        {
+            return spellName != null && BuffCatalogLevels.Table.TryGetValue(spellName.Trim(), out IReadOnlyDictionary<int, int> levels)
+                ? levels
+                : null;
+        }
+
+        /// <summary>
+        /// True when a job at the given level can cast the spell. Levels above 99 are
+        /// JP-gated in spells.lua (100 = main-only II spells, 1200 = 99 + spent JP):
+        /// those require the MAIN job at 99 — never a sub job, even at ML 50. Unknown
+        /// spells fail open (visible) so a data gap never hides a row.
+        /// </summary>
+        public static bool CastableBy(string spellName, int jobId, int jobLevel, bool isMainJob)
+        {
+            IReadOnlyDictionary<int, int> levels = LevelsOf(spellName);
+            if (levels == null)
+            {
+                return true;
+            }
+
+            if (!levels.TryGetValue(jobId, out int required))
+            {
+                return false;
+            }
+
+            if (required > 99)
+            {
+                return isMainJob && jobLevel >= 99;
+            }
+
+            return required <= jobLevel;
+        }
+
         /// <summary>Group names in catalog order, with their member spells.</summary>
         public static IReadOnlyList<KeyValuePair<string, List<BuffCatalogEntry>>> Groups()
         {
