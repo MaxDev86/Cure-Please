@@ -161,6 +161,7 @@ namespace CurePlease.Core
                 catch (Exception ex)
                 {
                     RaiseLog(module.Name + " zone-reset error: " + ex.Message);
+                    Serilog.Log.Error(ex, "Module {Module} OnZoneChanged failed", module.Name);
                 }
             }
 
@@ -235,6 +236,7 @@ namespace CurePlease.Core
                 {
                     // One bad tick must never kill the loop (legacy: unhandled = crash).
                     RaiseLog("Tick error: " + ex.Message);
+                    Serilog.Log.Error(ex, "Engine tick failed");
                 }
 
                 CurePleaseSettings settings = _settings.Current;
@@ -338,6 +340,7 @@ namespace CurePlease.Core
                 catch (Exception ex)
                 {
                     RaiseLog(module.Name + " module error: " + ex.Message);
+                    Serilog.Log.Error(ex, "Module {Module} AddCandidates failed", module.Name);
                 }
             }
 
@@ -400,6 +403,7 @@ namespace CurePlease.Core
                 catch (Exception ex)
                 {
                     RaiseLog(module.Name + " feedback error: " + ex.Message);
+                    Serilog.Log.Error(ex, "Module {Module} OnActionExecuted failed", module.Name);
                 }
             }
 

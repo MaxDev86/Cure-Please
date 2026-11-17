@@ -188,7 +188,18 @@ namespace CurePlease.Core
 
                 LastPacketUtc = DateTime.UtcNow;
                 string message = Encoding.UTF8.GetString(packet.Buffer);
-                Dispatch(message);
+
+                try
+                {
+                    Dispatch(message);
+                }
+                catch (Exception ex)
+                {
+                    // A throwing subscriber (or a malformed packet) must not kill the
+                    // receive loop — log and keep listening.
+                    Error?.Invoke("dispatch error: " + ex.Message);
+                    Serilog.Log.Warning(ex, "AddonListener dispatch failed for {Message}", message);
+                }
             }
         }
 

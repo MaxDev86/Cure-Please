@@ -66,8 +66,9 @@ namespace CurePlease.Settings
                               ?? new GlobalSettings();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Serilog.Log.Warning(ex, "Global settings load failed for {Path}; using defaults", _path);
                 Current = new GlobalSettings();
             }
         }
@@ -82,9 +83,10 @@ namespace CurePlease.Settings
                 File.WriteAllText(temp, JsonSerializer.Serialize(Current, JsonOptions));
                 File.Move(temp, _path, true);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // A UI preference failing to persist must never break the app.
+                Serilog.Log.Warning(ex, "Global settings save failed for {Path}", _path);
             }
         }
     }

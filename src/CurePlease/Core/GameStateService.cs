@@ -252,7 +252,7 @@ namespace CurePlease.Core
             }
         }
 
-        /// <summary>Sends a command line to the game (e.g. /ma, /ja, /item). Returns false when detached.</summary>
+        /// <summary>Sends a command line to the game (e.g. /ma, /ja, /item). Returns false when detached or the send failed (game gone).</summary>
         public virtual bool SendCommand(string command)
         {
             if (_pl == null || State != ConnectionState.Connected)
@@ -260,8 +260,20 @@ namespace CurePlease.Core
                 return false;
             }
 
-            _pl.ThirdParty.SendString(command);
-            return true;
+            try
+            {
+                _pl.ThirdParty.SendString(command);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                // A dead/unresponsive client must not crash the caller — mark the
+                // connection lost so the engine stops firing into a corpse.
+                Serilog.Log.Warning(ex, "SendString failed: {Command}", command);
+                LastError = "Send failed: " + ex.Message;
+                SetState(ConnectionState.Lost);
+                return false;
+            }
         }
 
         /// <summary>Cast bar fill ratio for the local player: 1.0 idle, ramps 0 -&gt; 1 while casting; -1 when unavailable.</summary>
@@ -308,7 +320,19 @@ namespace CurePlease.Core
 
         public virtual bool KnowsSpell(uint spellId)
         {
-            return _pl != null && _pl.Player.HasSpell(spellId);
+            if (_pl == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return _pl.Player.HasSpell(spellId);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>True when the character's known-ability mask has the ability (false when detached).</summary>
@@ -316,7 +340,19 @@ namespace CurePlease.Core
         /// <returns>True when the ability bit is set.</returns>
         public virtual bool KnowsAbility(int abilityId)
         {
-            return _pl != null && abilityId > 0 && _pl.Player.HasAbility((ushort)abilityId);
+            if (_pl == null || abilityId <= 0)
+            {
+                return false;
+            }
+
+            try
+            {
+                return _pl.Player.HasAbility((ushort)abilityId);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>
@@ -334,7 +370,16 @@ namespace CurePlease.Core
                 return false;
             }
 
-            EliteAPI.PlayerInfo info = _pl.Player.GetPlayerInfo();
+            EliteAPI.PlayerInfo info;
+            try
+            {
+                info = _pl.Player.GetPlayerInfo();
+            }
+            catch
+            {
+                return true; // job unreadable — don't block what we can't evaluate
+            }
+
             if (info == null || info.MainJob == 0)
             {
                 return true; // job unreadable — don't block what we can't evaluate
@@ -479,7 +524,19 @@ namespace CurePlease.Core
 
         public virtual int GetSpellRecast(int spellIndex)
         {
-            return _pl == null ? -1 : _pl.Recast.GetSpellRecast(spellIndex);
+            if (_pl == null)
+            {
+                return -1;
+            }
+
+            try
+            {
+                return _pl.Recast.GetSpellRecast(spellIndex);
+            }
+            catch
+            {
+                return -1;
+            }
         }
 
         private HashSet<int> _ownedItemIds;

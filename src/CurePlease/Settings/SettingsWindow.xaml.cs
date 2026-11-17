@@ -206,17 +206,10 @@ namespace CurePlease.Settings
             // Publish first so the profile file receives the edited clone, not the old settings.
             _settings.Adopt(_clone);
 
-            try
+            // No profile file yet (e.g. fresh install before attach): save as default.
+            if (!_profiles.SaveActive() && !_profiles.SaveAs(ProfileService.DefaultProfileName))
             {
-                if (!_profiles.SaveActive())
-                {
-                    // No profile file yet (e.g. fresh install before attach): save as default.
-                    _profiles.SaveAs(ProfileService.DefaultProfileName);
-                }
-            }
-            catch (Exception ex)
-            {
-                StatusText.Text = "Save failed: " + ex.Message;
+                StatusText.Text = "Save failed — see logs (file locked or not writable?)";
                 return;
             }
 
@@ -276,7 +269,12 @@ namespace CurePlease.Settings
             // Publish a COPY: the window keeps editing _clone, so the live settings
             // must not be the same object (bindings would mutate it mid-edit).
             _settings.Adopt(_clone.DeepClone());
-            _profiles.SaveAs(name);
+            if (!_profiles.SaveAs(name))
+            {
+                StatusText.Text = "Save As failed — see logs (file locked or not writable?)";
+                return;
+            }
+
             _originalJson = SettingsService.SerializeForComparison(_clone);
             UpdateProfileLabel();
             StatusText.Text = "Saved as " + name + " (now active)";
@@ -313,6 +311,7 @@ namespace CurePlease.Settings
             }
             catch (Exception ex)
             {
+                Serilog.Log.Warning(ex, "Profile duplicate failed: {Source} -> {Name}", source, name);
                 StatusText.Text = "Duplicate failed: " + ex.Message;
             }
         }
@@ -334,7 +333,12 @@ namespace CurePlease.Settings
                 return;
             }
 
-            _profiles.Delete(active);
+            if (!_profiles.Delete(active))
+            {
+                StatusText.Text = "Delete failed — see logs (file locked or not writable?)";
+                return;
+            }
+
             UpdateProfileLabel();
             StatusText.Text = "Deleted " + active;
         }

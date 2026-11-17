@@ -160,15 +160,23 @@ namespace CurePlease.Settings
 
         public IReadOnlyList<string> ListProfiles()
         {
-            if (!Directory.Exists(_directory))
+            try
             {
+                if (!Directory.Exists(_directory))
+                {
+                    return Array.Empty<string>();
+                }
+
+                return Directory.EnumerateFiles(_directory, "*.json")
+                    .Select(Path.GetFileNameWithoutExtension)
+                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "Profile directory {Directory} is not readable", _directory);
                 return Array.Empty<string>();
             }
-
-            return Directory.EnumerateFiles(_directory, "*.json")
-                .Select(Path.GetFileNameWithoutExtension)
-                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-                .ToList();
         }
 
         /// <summary>
@@ -243,14 +251,19 @@ namespace CurePlease.Settings
             return true;
         }
 
-        /// <summary>Saves the live settings under a profile name and makes it active.</summary>
-        public void SaveAs(string name)
+        /// <summary>Saves the live settings under a profile name and makes it active. False when the write failed.</summary>
+        public bool SaveAs(string name)
         {
-            _settings.Save(_settings.Current, PathFor(name));
+            if (!_settings.Save(_settings.Current, PathFor(name)))
+            {
+                return false;
+            }
+
             ActiveName = name;
+            return true;
         }
 
-        /// <summary>Saves the live settings back to the active profile; false when there is none.</summary>
+        /// <summary>Saves the live settings back to the active profile; false when there is none or the write failed.</summary>
         public bool SaveActive()
         {
             if (ActiveName == null)
@@ -258,8 +271,7 @@ namespace CurePlease.Settings
                 return false;
             }
 
-            _settings.Save(_settings.Current, PathFor(ActiveName));
-            return true;
+            return _settings.Save(_settings.Current, PathFor(ActiveName));
         }
 
         public void Duplicate(string sourceName, string newName)
@@ -282,7 +294,16 @@ namespace CurePlease.Settings
                 return false;
             }
 
-            File.Delete(path);
+            try
+            {
+                File.Delete(path);
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "Profile delete failed for {Path}", path);
+                return false;
+            }
+
             if (ActiveName != null && ActiveName.Equals(name, StringComparison.OrdinalIgnoreCase))
             {
                 ActiveName = null;

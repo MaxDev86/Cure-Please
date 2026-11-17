@@ -47,6 +47,12 @@ namespace CurePlease.Settings
             return JsonSerializer.Serialize(settings, JsonOptions);
         }
 
+        /// <summary>
+        /// Loads settings from disk and publishes them. Never throws: a missing file
+        /// keeps the current settings, and an unreadable/corrupt file is logged and
+        /// also keeps the current settings (publishing half-valid state is worse than
+        /// keeping known-good).
+        /// </summary>
         public CurePleaseSettings Load(string path)
         {
             if (!File.Exists(path))
@@ -54,28 +60,50 @@ namespace CurePlease.Settings
                 return Current;
             }
 
-            string json = File.ReadAllText(path);
-            CurePleaseSettings loaded = JsonSerializer.Deserialize<CurePleaseSettings>(json, JsonOptions)
-                                        ?? new CurePleaseSettings();
+            try
+            {
+                string json = File.ReadAllText(path);
+                CurePleaseSettings loaded = JsonSerializer.Deserialize<CurePleaseSettings>(json, JsonOptions)
+                                            ?? new CurePleaseSettings();
 
-            Migrate(loaded);
-            Publish(loaded);
-            return loaded;
+                Migrate(loaded);
+                Publish(loaded);
+                return loaded;
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "Settings load failed for {Path}; keeping current settings", path);
+                return Current;
+            }
         }
 
-        public void Save(CurePleaseSettings settings, string path)
+        /// <summary>
+        /// Persists settings atomically (write-then-rename) and publishes them. False
+        /// when the write failed — logged; the in-memory publish is skipped too, so a
+        /// failed save never makes unsaved-on-disk settings look live.
+        /// </summary>
+        public bool Save(CurePleaseSettings settings, string path)
         {
             settings.Version = CurePleaseSettings.CurrentVersion;
 
-            Directory.CreateDirectory(Path.GetDirectoryName(path));
-            string json = JsonSerializer.Serialize(settings, JsonOptions);
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                string json = JsonSerializer.Serialize(settings, JsonOptions);
 
-            // Write-then-rename so a crash mid-write cannot corrupt the live file.
-            string temp = path + ".tmp";
-            File.WriteAllText(temp, json);
-            File.Move(temp, path, true);
+                // Write-then-rename so a crash mid-write cannot corrupt the live file.
+                string temp = path + ".tmp";
+                File.WriteAllText(temp, json);
+                File.Move(temp, path, true);
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Error(ex, "Settings save failed for {Path}", path);
+                return false;
+            }
 
             Publish(settings);
+            return true;
         }
 
         private void Publish(CurePleaseSettings settings)

@@ -282,14 +282,25 @@ namespace CurePlease
 
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
-            var window = new SettingsWindow(_settings, _profiles, _globals,
-                suggestedProfileName: SuggestProfileName(), buffFilter: SuggestBuffFilter()) { Owner = this };
+            bool? saved;
+            try
+            {
+                var window = new SettingsWindow(_settings, _profiles, _globals,
+                    suggestedProfileName: SuggestProfileName(), buffFilter: SuggestBuffFilter()) { Owner = this };
 
-            // Profile ops inside the dialog (Save As/Duplicate/Delete) change the active
-            // profile even when the dialog is cancelled — always refresh.
-            window.ShowDialog();
+                // Profile ops inside the dialog (Save As/Duplicate/Delete) change the active
+                // profile even when the dialog is cancelled — always refresh.
+                saved = window.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                AppendLog("Settings window failed: " + ex.Message);
+                Serilog.Log.Error(ex, "Settings window failed");
+                saved = false;
+            }
+
             UpdateActiveProfileLabel();
-            if (window.DialogResult == true)
+            if (saved == true)
             {
                 AppendLog("Settings saved to profile " + (_profiles.ActiveName ?? "(none)"));
             }
@@ -363,9 +374,9 @@ namespace CurePlease
             updated.General.PauseActions = !updated.General.PauseActions;
             _settings.Adopt(updated);
 
-            if (!_profiles.SaveActive())
+            if (!_profiles.SaveActive() && !_profiles.SaveAs(ProfileService.DefaultProfileName))
             {
-                _profiles.SaveAs(ProfileService.DefaultProfileName);
+                AppendLog("WARNING: pause state could not be written to the profile file");
             }
 
             UpdateActiveProfileLabel();
@@ -495,9 +506,18 @@ namespace CurePlease
 
             if (row.IsSelf)
             {
-                var window = new SettingsWindow(_settings, _profiles, _globals, "Buff Upkeep",
-                    SuggestProfileName(), SuggestBuffFilter()) { Owner = this };
-                window.ShowDialog();
+                try
+                {
+                    var window = new SettingsWindow(_settings, _profiles, _globals, "Buff Upkeep",
+                        SuggestProfileName(), SuggestBuffFilter()) { Owner = this };
+                    window.ShowDialog();
+                }
+                catch (Exception ex)
+                {
+                    AppendLog("Settings window failed: " + ex.Message);
+                    Serilog.Log.Error(ex, "Settings window failed");
+                }
+
                 UpdateActiveProfileLabel();
                 return;
             }
@@ -608,16 +628,24 @@ namespace CurePlease
 
         private async void OnClosing(object sender, CancelEventArgs e)
         {
-            await _engine.StopAsync();
-            _addon.Dispose();
-
-            // Closing detaches, and detaching unloads the addon from the client.
-            if (_state.IsAttached)
+            try
             {
-                _state.SendCommand("//lua unload CurePlease3");
-            }
+                await _engine.StopAsync();
+                _addon.Dispose();
 
-            _state.Detach();
+                // Closing detaches, and detaching unloads the addon from the client.
+                if (_state.IsAttached)
+                {
+                    _state.SendCommand("//lua unload CurePlease3");
+                }
+
+                _state.Detach();
+            }
+            catch (Exception ex)
+            {
+                // Shutdown must not crash on a dead client — the process is exiting anyway.
+                Serilog.Log.Warning(ex, "Detach/cleanup during shutdown failed");
+            }
         }
 
         private sealed class PartyRow
