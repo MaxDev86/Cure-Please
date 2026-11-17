@@ -158,6 +158,7 @@ namespace CurePlease
                 StartButton.IsEnabled = state == ConnectionState.Connected && !_engine.IsRunning;
                 JobInfoButton.Visibility = state == ConnectionState.Connected ? Visibility.Visible : Visibility.Collapsed;
                 AttachButton.Content = _state.IsAttached ? "Detach" : "Attach";
+                UpdatePauseButton();
                 if (state != ConnectionState.Connected)
                 {
                     Title = "CurePlease3";
@@ -401,6 +402,8 @@ namespace CurePlease
                 _engine.Start();
                 StartButton.Content = "Stop";
             }
+
+            UpdatePauseButton();
         }
 
         private void UpdateSnapshot(GameSnapshot snapshot)
@@ -662,9 +665,15 @@ namespace CurePlease
             PauseButton.Foreground = paused
                 ? System.Windows.Media.Brushes.Red
                 : System.Windows.SystemColors.ControlTextBrush;
-            PauseButton.ToolTip = paused
-                ? "Resume all actions."
-                : "Pause all new actions without stopping status and party updates.";
+
+            // Pausing only means something while a live engine is making decisions.
+            bool active = _state.State == ConnectionState.Connected && _engine.IsRunning;
+            PauseButton.IsEnabled = active;
+            PauseButton.ToolTip = !active
+                ? "Attach to a character and press Start first."
+                : paused
+                    ? "Resume all actions."
+                    : "Pause all new actions without stopping status and party updates.";
         }
 
         private void AppendLog(string message)
