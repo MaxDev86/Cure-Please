@@ -50,7 +50,14 @@ level re-runs the audit even when the visible job levels stay the same.
 ## Edit semantics (from the original proposal)
 
 - The dialog edits a deep copy; Save publishes atomically and writes the
-  active profile file. Cancel discards.
+  active profile file. Cancel/X discards — after a discard confirmation
+  when the edited copy differs from the opening baseline (the baseline
+  is refreshed by an in-dialog Save As).
+- Profile file management lives in the dialog's profile bar: **Save As…**
+  (commits current edits under a new name and switches to it; the name
+  field is pre-filled `Charname_MAIN_SUB` from the attached character),
+  **Duplicate…** (copies the saved file), **Delete…** (removes the file;
+  the in-memory settings stay loaded).
 - The engine reads settings per tick, so saved changes apply live,
   including profile auto-switches mid-session.
 - Import path: legacy per-combo XML files import into the matching
@@ -123,8 +130,10 @@ The toggle persists in the app-level **global settings file**
 (`<exe>\global_settings.json`, `GlobalSettingsService`) — not inside
 per-combo profiles, since it is a viewing preference, not job behavior.
 That file also stores `AutoSwitchProfiles` (default **true**, the legacy
-behavior). The main window shows the active profile and an auto-switch
-checkbox. With auto-switch off, a manually selected profile stays active
+behavior). The main window shows the active profile in a drop-down
+(manual selection switches immediately and sticks until the job context
+changes) plus an auto-switch checkbox. With auto-switch off, a manually
+selected profile stays active
 across character and job changes; when a changed context matches a
 different profile, the UI logs a loud `PROFILE AUTO-SWITCH OFF` notice
 once for that context instead of silently switching or staying stale.

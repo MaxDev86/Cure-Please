@@ -41,6 +41,12 @@ namespace CurePlease.Settings
                 JsonSerializer.Serialize(source, JsonOptions), JsonOptions);
         }
 
+        /// <summary>Canonical JSON with the same options as file writes — used by the settings window's dirty check.</summary>
+        public static string SerializeForComparison(CurePleaseSettings settings)
+        {
+            return JsonSerializer.Serialize(settings, JsonOptions);
+        }
+
         public CurePleaseSettings Load(string path)
         {
             if (!File.Exists(path))

@@ -36,41 +36,50 @@ namespace CurePlease.Settings
         private readonly byte _comboMain;
         private readonly byte _comboSub;
         private readonly string _forcedPageKey;
+        private readonly string _suggestedProfileName;
+
+        /// <summary>Baseline JSON captured at open (and refreshed by Save As); Cancel/X prompts when the edited clone differs.</summary>
+        private string _originalJson;
+        private bool _closeConfirmed;
 
         public SettingsWindow(SettingsService settings, ProfileService profiles, GlobalSettingsService globals,
-            string initialPage = null)
+            string initialPage = null, string suggestedProfileName = null, BuffFilterPreset buffFilter = null)
         {
             InitializeComponent();
 
             _settings = settings;
             _profiles = profiles;
             _globals = globals;
+            _suggestedProfileName = suggestedProfileName;
             _clone = settings.Current.DeepClone();
             _bardModel = new BardEditModel(_clone.Bard);
             _healingModel = new HealingEditModel(_clone);
             _debuffsModel = new DebuffsEditModel(_clone);
             _buffsModel = new BuffsEditModel(_clone);
+            if (buffFilter != null)
+            {
+                _buffsModel.FilterMainJob = buffFilter.MainJob;
+                _buffsModel.FilterMainLevel = buffFilter.MainLevel;
+                _buffsModel.FilterSubJob = buffFilter.SubJob;
+                _buffsModel.FilterSubLevel = buffFilter.SubLevel;
+            }
             _schModel = new SchEditModel(_clone.Sch);
             _whmModel = new WhmEditModel(_clone.Whm);
             _prioritiesModel = new PrioritiesEditModel(_clone.Priorities);
 
             bool comboKnown = ProfileService.TryComboFromProfileName(_profiles.ActiveName, out _comboMain, out _comboSub);
-            string comboLabel = comboKnown
-                ? ProfileService.JobAbbreviation(_comboMain)
-                  + (_comboSub != 0 ? "/" + ProfileService.JobAbbreviation(_comboSub) : string.Empty)
-                : null;
 
-            ProfileNameText.Text = _profiles.ActiveName ?? "(unsaved settings)";
-            if (comboLabel != null)
-            {
-                ProfileNameText.Text += "  —  " + comboLabel;
-            }
+            // Bake model normalization into the baseline so an untouched window is never "dirty".
+            CommitEdits();
+            _originalJson = SettingsService.SerializeForComparison(_clone);
+
+            UpdateProfileLabel();
 
             // The combo filter only exists when a combo can be read from the profile name.
             ComboFilterBox.Visibility = comboKnown ? Visibility.Visible : Visibility.Collapsed;
             if (comboKnown)
             {
-                ComboFilterBox.Content = "Only job pages for " + comboLabel;
+                ComboFilterBox.Content = "Only job pages for " + ComboLabel();
                 ComboFilterBox.IsChecked = _globals.Current.FilterJobPagesByCombo;
             }
 
@@ -192,8 +201,7 @@ namespace CurePlease.Settings
 
         private void Save_Click(object sender, RoutedEventArgs e)
         {
-            _bardModel.Commit();
-            _buffsModel.Commit();
+            CommitEdits();
 
             // Publish first so the profile file receives the edited clone, not the old settings.
             _settings.Adopt(_clone);
@@ -216,10 +224,181 @@ namespace CurePlease.Settings
             Close();
         }
 
+        /// <summary>Commits page models that buffer their edits (Bard list, Buff grid) into the clone.</summary>
+        private void CommitEdits()
+        {
+            _bardModel.Commit();
+            _buffsModel.Commit();
+        }
+
+        private string ComboLabel()
+        {
+            string main = ProfileService.JobAbbreviation(_comboMain);
+            if (main == null)
+            {
+                return null;
+            }
+
+            string sub = ProfileService.JobAbbreviation(_comboSub);
+            return sub == null ? main : main + "/" + sub;
+        }
+
+        private void UpdateProfileLabel()
+        {
+            ProfileNameText.Text = _profiles.ActiveName ?? "(unsaved settings)";
+            string combo = ComboLabel();
+            if (combo != null)
+            {
+                ProfileNameText.Text += "  —  " + combo;
+            }
+        }
+
+        private void SaveAs_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new ProfileNameDialog("Save profile as",
+                "Save the current settings (including unsaved edits) as a new profile and switch to it:",
+                SuggestName()) { Owner = this };
+            if (dialog.ShowDialog() != true)
+            {
+                return;
+            }
+
+            string name = dialog.ProfileName;
+            if (ProfileExists(name) && MessageBox.Show(this,
+                    "A profile named '" + name + "' already exists. Overwrite it?",
+                    "Save As", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            CommitEdits();
+
+            // Publish a COPY: the window keeps editing _clone, so the live settings
+            // must not be the same object (bindings would mutate it mid-edit).
+            _settings.Adopt(_clone.DeepClone());
+            _profiles.SaveAs(name);
+            _originalJson = SettingsService.SerializeForComparison(_clone);
+            UpdateProfileLabel();
+            StatusText.Text = "Saved as " + name + " (now active)";
+        }
+
+        private void Duplicate_Click(object sender, RoutedEventArgs e)
+        {
+            string source = _profiles.ActiveName;
+            if (source == null)
+            {
+                StatusText.Text = "Nothing to duplicate — save first.";
+                return;
+            }
+
+            var dialog = new ProfileNameDialog("Duplicate profile",
+                "Copy the saved profile '" + source + "' (last saved state, not unsaved edits) as:",
+                SuggestName()) { Owner = this };
+            if (dialog.ShowDialog() != true)
+            {
+                return;
+            }
+
+            string name = dialog.ProfileName;
+            if (ProfileExists(name))
+            {
+                StatusText.Text = "'" + name + "' already exists — pick another name.";
+                return;
+            }
+
+            try
+            {
+                _profiles.Duplicate(source, name);
+                StatusText.Text = "Duplicated to " + name + " (switch on the main window)";
+            }
+            catch (Exception ex)
+            {
+                StatusText.Text = "Duplicate failed: " + ex.Message;
+            }
+        }
+
+        private void Delete_Click(object sender, RoutedEventArgs e)
+        {
+            string active = _profiles.ActiveName;
+            if (active == null)
+            {
+                StatusText.Text = "No profile file to delete.";
+                return;
+            }
+
+            if (MessageBox.Show(this,
+                    "Delete profile '" + active + "' from disk? The loaded settings stay in memory; "
+                    + "saving afterwards writes a new file.",
+                    "Delete profile", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            _profiles.Delete(active);
+            UpdateProfileLabel();
+            StatusText.Text = "Deleted " + active;
+        }
+
+        /// <summary>Charname_MAIN_SUB from the attached character when available; else the combo from the profile name.</summary>
+        private string SuggestName()
+        {
+            if (!string.IsNullOrEmpty(_suggestedProfileName))
+            {
+                return _suggestedProfileName;
+            }
+
+            string combo = ProfileService.ComboNameFor(_comboMain, _comboSub);
+            return combo ?? string.Empty;
+        }
+
+        private bool ProfileExists(string name)
+        {
+            foreach (string existing in _profiles.ListProfiles())
+            {
+                if (existing.Equals(name, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private void Cancel_Click(object sender, RoutedEventArgs e)
         {
+            if (!ConfirmDiscard())
+            {
+                return;
+            }
+
+            _closeConfirmed = true;
             DialogResult = false;
             Close();
+        }
+
+        /// <summary>True when it is safe to close: no edits, or the user confirmed discarding them.</summary>
+        private bool ConfirmDiscard()
+        {
+            CommitEdits();
+            if (SettingsService.SerializeForComparison(_clone) == _originalJson)
+            {
+                return true;
+            }
+
+            return MessageBox.Show(this, "Discard unsaved changes?", "Cure Please — Settings",
+                       MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
+        }
+
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+        {
+            // Save sets DialogResult=true; Cancel sets _closeConfirmed after its own prompt.
+            if (DialogResult != true && !_closeConfirmed && !ConfirmDiscard())
+            {
+                e.Cancel = true;
+                return;
+            }
+
+            base.OnClosing(e);
         }
     }
 }
