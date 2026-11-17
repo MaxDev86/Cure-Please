@@ -311,6 +311,14 @@ namespace CurePlease.Core
             return _pl != null && _pl.Player.HasSpell(spellId);
         }
 
+        /// <summary>True when the character's known-ability mask has the ability (false when detached).</summary>
+        /// <param name="abilityId">Ability id (Windower job_abilities.lua id / IAbility.ID).</param>
+        /// <returns>True when the ability bit is set.</returns>
+        public virtual bool KnowsAbility(int abilityId)
+        {
+            return _pl != null && abilityId > 0 && _pl.Player.HasAbility((ushort)abilityId);
+        }
+
         /// <summary>
         /// True when the spell is castable on the current main or sub job at its level.
         /// <see cref="KnowsSpell"/> only reports "ever learned" — the client's
@@ -782,6 +790,47 @@ namespace CurePlease.Core
                 mainJob = 0;
                 subJob = 0;
             }
+        }
+
+        /// <summary>
+        /// Enumerates every player-learnable spell in the client resource database by id
+        /// scan. Entries with an empty name (gaps in the id space) are skipped; Trust
+        /// spells (MagicType 8) and unlearnable enemy-only spells
+        /// (<see cref="SpellLearning.IsUnlearnable"/>, e.g. Hastega, Slowga) are excluded.
+        /// Null when detached. Read on demand — the result is cacheable per session.
+        /// </summary>
+        public virtual List<EliteAPI.ISpell> GetAllSpells()
+        {
+            if (_pl == null)
+            {
+                return null;
+            }
+
+            var spells = new List<EliteAPI.ISpell>();
+            for (uint id = 1; id <= 1200; id++)
+            {
+                EliteAPI.ISpell spell;
+                try
+                {
+                    spell = _pl.Resources.GetSpell(id);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (spell == null || spell.Name == null || spell.Name.Length == 0
+                    || string.IsNullOrEmpty(spell.Name[0])
+                    || spell.MagicType == (ushort)FFXI.Memory.MagicType.Trust
+                    || SpellLearning.IsUnlearnable(spell.Index))
+                {
+                    continue;
+                }
+
+                spells.Add(spell);
+            }
+
+            return spells;
         }
 
         /// <summary>True when the named item resolves in resources and its id is in the owned scan.</summary>
