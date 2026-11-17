@@ -158,6 +158,9 @@ namespace CurePlease.Core
                     ZoneId = _pl.Player.ZoneId,
                     EntityStatus = _pl.Player.PlayerState,
                     Buffs = info.Buffs ?? Array.Empty<short>(),
+                    X = _pl.Player.X,
+                    Y = _pl.Player.Y,
+                    Z = _pl.Player.Z,
                 };
 
                 List<PartyMemberState> members = new List<PartyMemberState>(18);
@@ -210,6 +213,7 @@ namespace CurePlease.Core
                 if (target != null)
                 {
                     snapshot.TargetId = target.TargetId;
+                    snapshot.TargetIndex = target.TargetIndex;
                     snapshot.TargetName = target.TargetName ?? string.Empty;
                     snapshot.TargetHpp = target.TargetHealthPercent;
                 }
@@ -519,6 +523,104 @@ namespace CurePlease.Core
             catch
             {
                 return float.MaxValue;
+            }
+        }
+
+        /// <summary>True while the client-side auto-follow flag is set (live-verified memory state).</summary>
+        public virtual bool IsAutoFollowActive()
+        {
+            if (_pl == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return _pl.AutoFollow.IsAutoFollowing;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Points the auto-follow state struct at an entity (index + server id written to both fields).</summary>
+        public virtual bool SetAutoFollowInfo(int entityIndex, uint serverId)
+        {
+            if (_pl == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return _pl.AutoFollow.SetAutoFollowInfo((uint)entityIndex, serverId, (uint)entityIndex, serverId);
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "SetAutoFollowInfo failed");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Writes the auto-run destination (ABSOLUTE world coordinates — the struct
+        /// tracks the followee live; verified in FFXI.Memory docs/maps.md).
+        /// </summary>
+        public virtual bool SetAutoFollowCoords(float x, float y, float z)
+        {
+            if (_pl == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return _pl.AutoFollow.SetAutoFollowCoords(x, y, z);
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "SetAutoFollowCoords failed");
+                return false;
+            }
+        }
+
+        /// <summary>Sets the client-side auto-follow flag on/off.</summary>
+        public virtual bool SetAutoFollow(bool on)
+        {
+            if (_pl == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                _pl.AutoFollow.IsAutoFollowing = on;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "SetAutoFollow({On}) failed", on);
+                return false;
+            }
+        }
+
+        /// <summary>Sets the player's current target by entity-array index (0 clears). Used by native /follow mode.</summary>
+        public virtual bool SetTargetByIndex(int entityIndex)
+        {
+            if (_pl == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return _pl.Target.SetTarget(entityIndex);
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "SetTarget({Index}) failed", entityIndex);
+                return false;
             }
         }
 

@@ -52,6 +52,26 @@ namespace CurePlease.Settings
 
         /// <summary>Allow healing the local player when not in the party.</summary>
         public bool EnableOutOfPartyHealing { get; set; } = true;
+
+        /// <summary>
+        /// Character to auto-follow; empty disables following (legacy autoFollowName).
+        /// Set here or by right-clicking a party member on the main window.
+        /// </summary>
+        public string FollowTargetName { get; set; } = string.Empty;
+
+        /// <summary>Start following when the target is at least this many yalms away (legacy autoFollowDistance).</summary>
+        public int FollowDistance { get; set; } = 3;
+
+        /// <summary>Send the follow target a /tell when they are too far away or we appear stuck (legacy autoFollow_Warning).</summary>
+        public bool FollowWarning { get; set; }
+
+        /// <summary>
+        /// Use the game's own /follow command instead of memory-driven movement
+        /// (legacy FFXIDefaultAutoFollow). Fallback for if the memory write ever
+        /// breaks on a client update; once engaged, native follow ignores the
+        /// distance band and stays on until the target changes or you move.
+        /// </summary>
+        public bool FollowUseNative { get; set; }
     }
 
     public sealed class CureTierSettings

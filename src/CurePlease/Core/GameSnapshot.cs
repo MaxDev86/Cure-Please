@@ -71,6 +71,11 @@ namespace CurePlease.Core
         public EntityStatus EntityStatus { get; set; }
         public short[] Buffs { get; set; } = Array.Empty<short>();
 
+        /// <summary>World position (yalms); follow distance/stuck tracking.</summary>
+        public float X { get; set; }
+        public float Y { get; set; }
+        public float Z { get; set; }
+
         public uint EstimatedHpLoss
         {
             get
@@ -129,6 +134,9 @@ namespace CurePlease.Core
 
         /// <summary>Current main target's server id; 0 when nothing is targeted.</summary>
         public uint TargetId { get; set; }
+
+        /// <summary>Current main target's entity-array index; 0 when nothing is targeted.</summary>
+        public uint TargetIndex { get; set; }
 
         /// <summary>Current main target's display name; empty when nothing is targeted.</summary>
         public string TargetName { get; set; } = string.Empty;

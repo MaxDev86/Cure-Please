@@ -93,6 +93,9 @@ namespace CurePlease.Core
         private readonly List<IDecisionModule> _modules = new List<IDecisionModule>();
         private readonly StratagemIntents _intents = new StratagemIntents();
 
+        /// <summary>Auto-follow; ticked once per cycle and suspended while an action executes.</summary>
+        public FollowService Follow { get; private set; }
+
         /// <summary>Optional addon data provider; when set, party buffs are merged into each snapshot.</summary>
         public AddonListener Addon { get; set; }
 
@@ -113,6 +116,8 @@ namespace CurePlease.Core
             _casting = casting;
             _settings = settings;
             _intents.ClaimAdded += RaiseLog;
+            Follow = new FollowService(state);
+            Follow.Log += RaiseLog;
         }
 
         public bool IsRunning => _loop != null && !_loop.IsCompleted;
@@ -152,6 +157,7 @@ namespace CurePlease.Core
         {
             RaiseLog("Zoned — clearing buff/song tracking");
             _intents.Clear();
+            Follow.Reset();
             foreach (IDecisionModule module in _modules)
             {
                 try
@@ -194,6 +200,7 @@ namespace CurePlease.Core
         public void Stop()
         {
             _cts?.Cancel();
+            Follow.Reset();
             if (_pausedByZone)
             {
                 _pausedByZone = false;
@@ -306,20 +313,18 @@ namespace CurePlease.Core
                 Addon.PruneRoster(roster);
             }
 
-            if (settings.General.PauseActions || _pausedByZone)
-            {
-                return;
-            }
-
-            // Dead PL does nothing (KO, zoning handled by snapshot).
-            if (snapshot.Player.HP == 0)
-            {
-                return;
-            }
+            bool paused = settings.General.PauseActions || _pausedByZone;
+            bool dead = snapshot.Player.HP == 0;
 
             // Full incapacitation: no actions of any kind are possible.
-            if (HasAnyBuff(snapshot.Player, StatusEffect.Sleep, StatusEffect.Petrification, StatusEffect.Stun,
-                    StatusEffect.Charm1, StatusEffect.Charm2, StatusEffect.Terror))
+            bool fullyLocked = HasAnyBuff(snapshot.Player, StatusEffect.Sleep, StatusEffect.Petrification, StatusEffect.Stun,
+                    StatusEffect.Charm1, StatusEffect.Charm2, StatusEffect.Terror);
+
+            // Follow runs every tick — including paused/locked ones, so it can stand
+            // the character down the moment a gate closes. It never blocks.
+            Follow.Tick(snapshot, settings, !paused && !dead && !fullyLocked, _casting.IsCasting);
+
+            if (paused || dead || fullyLocked)
             {
                 return;
             }
@@ -379,6 +384,9 @@ namespace CurePlease.Core
             }
 
             ActionCandidate best = candidates.OrderByDescending(c => c.Score).First();
+
+            // Movement interrupts casts — stand still before the command goes out.
+            Follow.SuspendForAction();
 
             CastResult result = best.Category == ActionCategory.Item
                 ? await _casting.UseItemAsync(best.ActionName, best.TargetName, ct).ConfigureAwait(false)

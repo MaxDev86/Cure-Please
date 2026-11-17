@@ -29,5 +29,28 @@
                        VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray"/>
         </StackPanel>
 
+        <Separator Margin="0,16"/>
+
+        <TextBlock Text="Follow" FontWeight="Bold" Margin="0,0,0,6"/>
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+            <TextBlock Text="Target name:" VerticalAlignment="Center" Width="130"/>
+            <TextBox Text="{Binding General.FollowTargetName, UpdateSourceTrigger=PropertyChanged}" Width="140"/>
+            <TextBlock Text="Empty = off. Or right-click a party member on the main window."
+                       VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray"/>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+            <TextBlock Text="Distance (yalms):" VerticalAlignment="Center" Width="130"/>
+            <TextBox Text="{Binding General.FollowDistance, UpdateSourceTrigger=PropertyChanged}" Width="70"/>
+            <TextBlock Text="Start following when the target is at least this far. Legacy default: 3."
+                       VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray"/>
+        </StackPanel>
+        <CheckBox Content="Warn the target with a /tell when they are too far away or we appear stuck"
+                  IsChecked="{Binding General.FollowWarning, UpdateSourceTrigger=PropertyChanged}"
+                  Margin="0,4,0,0"/>
+        <CheckBox Content="Use the game's native /follow instead of memory-driven movement"
+                  IsChecked="{Binding General.FollowUseNative, UpdateSourceTrigger=PropertyChanged}"
+                  Margin="0,4,0,0"
+                  ToolTip="Fallback if the memory write breaks on a client update. Native follow ignores the distance band once engaged and stays on until the target is lost or you move."/>
+
     </StackPanel>
 </UserControl>

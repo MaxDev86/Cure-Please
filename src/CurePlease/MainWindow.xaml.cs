@@ -534,6 +534,57 @@ namespace CurePlease
             popup.Show();
         }
 
+        /// <summary>Party row right-click: sets the follow target (persisted in the active profile).</summary>
+        private void FollowMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            PartyRow row = ContextMenuRow(sender);
+            if (row == null)
+            {
+                return;
+            }
+
+            if (row.IsSelf)
+            {
+                AppendLog("Follow: cannot follow yourself");
+                return;
+            }
+
+            CurePleaseSettings updated = _settings.Current.DeepClone();
+            updated.General.FollowTargetName = row.Name;
+            _settings.Adopt(updated);
+            PersistQuietly();
+            AppendLog("Follow target: " + row.Name);
+        }
+
+        private void StopFollowMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (_settings.Current.General.FollowTargetName.Length == 0)
+            {
+                return;
+            }
+
+            CurePleaseSettings updated = _settings.Current.DeepClone();
+            updated.General.FollowTargetName = string.Empty;
+            _settings.Adopt(updated);
+            PersistQuietly();
+            AppendLog("Follow target cleared");
+        }
+
+        /// <summary>The PartyRow under a context-menu click (the grid selects the row on right-click).</summary>
+        private PartyRow ContextMenuRow(object sender)
+        {
+            return PartyGrid.SelectedItem as PartyRow;
+        }
+
+        /// <summary>Saves the active profile after a quick settings change; warns in the log on failure.</summary>
+        private void PersistQuietly()
+        {
+            if (!_profiles.SaveActive() && !_profiles.SaveAs(ProfileService.DefaultProfileName))
+            {
+                AppendLog("WARNING: settings change could not be written to the profile file");
+            }
+        }
+
         private void AutoSwitchBox_Toggled(object sender, RoutedEventArgs e)
         {
             _profiles.AutoSwitchEnabled = AutoSwitchBox.IsChecked == true;

@@ -54,6 +54,12 @@
         <!-- Party/alliance list: slots 0-5 own party, 6-11 / 12-17 alliance parties -->
         <DataGrid x:Name="PartyGrid" Grid.Row="3" AutoGenerateColumns="False" IsReadOnly="True"
                   HeadersVisibility="Column" Margin="0,0,0,6" CanUserAddRows="False">
+            <DataGrid.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Follow this player" Click="FollowMenuItem_Click"/>
+                    <MenuItem Header="Stop following" Click="StopFollowMenuItem_Click"/>
+                </ContextMenu>
+            </DataGrid.ContextMenu>
             <DataGrid.Columns>
                 <DataGridTextColumn Header="Pt" Binding="{Binding PartyDisplay}" Width="30"/>
                 <DataGridTextColumn Header="#" Binding="{Binding MemberNumber}" Width="30"/>
