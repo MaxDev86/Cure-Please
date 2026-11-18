@@ -1,5 +1,12 @@
 # Multi-Instance (Tabbed Attachments) — Design Research
 
+**Status: SHIPPED.** MainWindow is a tab shell owning one `InstanceView` per
+attached process; the shared `AddonListener` routes cast events by character
+name; `PidRegistry` blocks two tabs from claiming the same PL process; a
+profile-collision warning fires when two tabs hold the same profile file;
+`EliteAPI` implements `IDisposable` and `GameStateService.Detach()` disposes
+deterministically. The original research follows.
+
 What it would take to attach to N FFXI processes from one Cure-Please window:
 one tab per instance, each tab its own PL character, profile, and optional
 monitored character. Research only — no code changed.

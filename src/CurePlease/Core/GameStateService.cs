@@ -97,6 +97,7 @@ namespace CurePlease.Core
 
         public void DetachMonitored()
         {
+            _monitored?.Dispose();
             _monitored = null;
             _monitoredProcessId = 0;
         }
@@ -104,6 +105,7 @@ namespace CurePlease.Core
         public void Detach()
         {
             DetachMonitored();
+            _pl?.Dispose();
             _pl = null;
             _plProcessId = 0;
             SetState(ConnectionState.Detached);
