@@ -50,6 +50,55 @@ namespace CurePlease.Core
     }
 
     /// <summary>
+    /// Live point-in-time status of the local player for the Character Info Status tab,
+    /// from <see cref="GameStateService.GetStatusInfo"/>. Exemplar fields are only
+    /// meaningful when <see cref="MainJobMastered"/> is true (the client struct tracks
+    /// the current main job and goes stale on a non-mastered one).
+    /// </summary>
+    public sealed class PlayerStatusInfo
+    {
+        public string Name { get; set; } = string.Empty;
+        public byte MainJob { get; set; }
+        public byte MainJobLevel { get; set; }
+        public byte SubJob { get; set; }
+        public byte SubJobLevel { get; set; }
+
+        /// <summary>True when the main job has 2100 spent job points.</summary>
+        public bool MainJobMastered { get; set; }
+
+        /// <summary>Main job spent job points (0-2100; mastery progress).</summary>
+        public int MainJobSpentJobPoints { get; set; }
+
+        /// <summary>Main job master level 0-50; 0 when not mastered.</summary>
+        public int MainJobMasterLevel { get; set; }
+
+        /// <summary>Exemplar points into the current master level.</summary>
+        public uint ExemplarPoints { get; set; }
+
+        /// <summary>Exemplar points needed for the next master level (cap gauge at ML 50).</summary>
+        public uint ExemplarPointsNeeded { get; set; }
+
+        public uint HP { get; set; }
+        public uint HPMax { get; set; }
+        public uint HPP { get; set; }
+        public uint MP { get; set; }
+        public uint MPMax { get; set; }
+        public uint MPP { get; set; }
+        public uint TP { get; set; }
+        public int ZoneId { get; set; }
+
+        /// <summary>Client entity status name ("Engaged", "Standing", ...).</summary>
+        public string EntityStatus { get; set; } = string.Empty;
+        public short[] Buffs { get; set; } = Array.Empty<short>();
+
+        public bool HasPet { get; set; }
+        public string PetName { get; set; } = string.Empty;
+        public int PetHPP { get; set; }
+        public int PetMPP { get; set; }
+        public uint PetTP { get; set; }
+    }
+
+    /// <summary>
     /// Owns the FFXI.Memory API instances (local player + optional monitored process)
     /// and produces one consistent <see cref="GameSnapshot"/> per engine tick.
     /// Replaces the legacy pattern of ~143 GetPartyMembers() calls per tick and
@@ -768,6 +817,63 @@ namespace CurePlease.Core
         }
 
         /// <summary>
+        /// True when the named ability can be used by the current job combination, ignoring
+        /// transient menu state. SCH stratagems only appear in the JA menu — and thus in
+        /// the known-ability mask — while the matching Arts is active (live-verified:
+        /// white bits flip on under Light Arts, off under Dark Arts), so the raw mask
+        /// false-reports them as unavailable; they are granted automatically by job level.
+        /// Merit-gated stratagems still rely on the mask (allocation is not readable).
+        /// </summary>
+        /// <param name="abilityName">English ability name, e.g. "Accession".</param>
+        /// <returns>True when the ability is usable now or once its Arts is active.</returns>
+        public virtual bool HasAbilityForUse(string abilityName)
+        {
+            if (HasAbility(abilityName))
+            {
+                return true;
+            }
+
+            AbilityCatalogEntry entry = AbilityCatalog.FindByName(abilityName);
+            if (entry == null || _pl == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return AbilityLearning.StratagemAccessible(entry,
+                    _pl.Player.MainJob, _pl.Player.MainJobLevel,
+                    _pl.Player.SubJob, _pl.Player.SubJobLevel,
+                    AnyJobMastered());
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>True when any of the 22 jobs is master leveled (ML gates sub-job Rapture/Ebullience).</summary>
+        private bool AnyJobMastered()
+        {
+            try
+            {
+                for (int job = 1; job <= 22; job++)
+                {
+                    if (_pl.Player.GetMasterLevel(job) > 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch
+            {
+                // ML reads are best-effort; a failed read just fails the 55-tier check closed.
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Temporary diagnostic for the HasAbility false-negative seen live: reports the
         /// resource id and raw mask probes through the live attachment so we can tell a
         /// resource-lookup miss apart from a broken ability-mask read. Soul Voice (bit 25)
@@ -924,6 +1030,88 @@ namespace CurePlease.Core
                 }
 
                 return rows;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Live status of the local player for the Character Info Status tab: vitals,
+        /// job combo, master-level/exemplar progress (main job only — the client struct
+        /// tracks the current main job and is reported only when it is mastered, since
+        /// it goes stale otherwise), zone, entity status, buffs, and pet vitals.
+        /// Returns null when detached or the player struct is unreadable.
+        /// </summary>
+        /// <returns>A fresh status snapshot, or null.</returns>
+        public virtual PlayerStatusInfo GetStatusInfo()
+        {
+            if (_pl == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                EliteAPI.PlayerInfo info = _pl.Player.GetPlayerInfo();
+                var status = new PlayerStatusInfo
+                {
+                    Name = _pl.Player.Name ?? string.Empty,
+                    MainJob = _pl.Player.MainJob,
+                    MainJobLevel = _pl.Player.MainJobLevel,
+                    SubJob = _pl.Player.SubJob,
+                    SubJobLevel = _pl.Player.SubJobLevel,
+                    HP = _pl.Player.HP,
+                    HPMax = _pl.Player.HPMax,
+                    HPP = _pl.Player.HPP,
+                    MP = _pl.Player.MP,
+                    MPMax = _pl.Player.MPMax,
+                    MPP = _pl.Player.MPP,
+                    TP = _pl.Player.TP,
+                    ZoneId = _pl.Player.ZoneId,
+                    EntityStatus = _pl.Player.PlayerState.ToString().Replace('_', ' '),
+                    Buffs = info.Buffs ?? Array.Empty<short>(),
+                };
+
+                try
+                {
+                    EliteAPI.PlayerJobPoints jp = _pl.Player.GetJobPoints(status.MainJob);
+                    status.MainJobSpentJobPoints = jp.SpentJobPoints;
+                    status.MainJobMastered = jp.SpentJobPoints >= 2100;
+                    if (status.MainJobMastered)
+                    {
+                        status.MainJobMasterLevel = _pl.Player.MainJobMasterLevel;
+                        status.ExemplarPoints = _pl.Player.ExemplarPoints;
+                        status.ExemplarPointsNeeded = _pl.Player.ExemplarPointsNeeded;
+                    }
+                }
+                catch
+                {
+                    // JP/ML/exemplar reads are best-effort; vitals alone are still useful.
+                }
+
+                try
+                {
+                    if (_pl.Player.PetIndex != 0)
+                    {
+                        EliteAPI.XiEntity pet = _pl.Player.Pet;
+                        status.HasPet = pet != null;
+                        if (pet != null)
+                        {
+                            status.PetName = pet.Name ?? string.Empty;
+                            status.PetHPP = pet.HealthPercent;
+                            status.PetMPP = pet.ManaPercent;
+                            status.PetTP = _pl.Player.PetTP;
+                        }
+                    }
+                }
+                catch
+                {
+                    // Pet reads are best-effort.
+                }
+
+                return status;
             }
             catch
             {

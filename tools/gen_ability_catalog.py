@@ -55,7 +55,9 @@ for line in open(sql_path, encoding="utf-8"):
     ability_id = int(f[0])
     job = int(f[2])
     level = int(f[3])
-    add_type = int(f[19])  # LSB ADDTYPE: 1=merit, 2=astral flow, 4=main-only, 8=learned from item
+    # LSB ADDTYPE: 1=merit, 2=astral flow, 4=main-only, 8=learned from item,
+    # 16=requires Light Arts (white grimoire), 32=requires Dark Arts (black grimoire)
+    add_type = int(f[19])
     if not (1 <= job <= 22):
         continue  # wyvern breaths (0), monstrosity (23)
     wtype = lua_types.get(ability_id)
@@ -95,7 +97,11 @@ entry_class = '''
         /// <summary>Job level the ability is learned at; two-hours are stored as 1.</summary>
         public int Level { get; }
 
-        /// <summary>Raw acquisition flags (LSB ADDTYPE): 1 merit, 4 main-only, 8 item-learned.</summary>
+        /// <summary>
+        /// Raw acquisition flags (LSB ADDTYPE): 1 merit, 2 astral-flow, 4 main-only,
+        /// 8 item-learned, 16 requires Light Arts (white grimoire), 32 requires
+        /// Dark Arts (black grimoire).
+        /// </summary>
         public int AddTypeFlags { get; }
 
         /// <summary>True when the ability requires merit point allocation (e.g. Altruism).</summary>
@@ -106,6 +112,16 @@ entry_class = '''
 
         /// <summary>True when learned from an item instead of leveling (e.g. COR rolls from dice).</summary>
         public bool ItemLearned => (AddTypeFlags & 8) != 0;
+
+        /// <summary>
+        /// True when the stratagem requires Light Arts (white grimoire). Such abilities
+        /// only appear in the JA menu — and thus in the client's known-ability mask —
+        /// while the matching Arts is active (live-verified).
+        /// </summary>
+        public bool WhiteGrimoire => (AddTypeFlags & 16) != 0;
+
+        /// <summary>True when the stratagem requires Dark Arts (black grimoire). See <see cref="WhiteGrimoire"/>.</summary>
+        public bool BlackGrimoire => (AddTypeFlags & 32) != 0;
 
         /// <summary>Display category: Ability, Stratagem, Roll, Waltz, Step, ...</summary>
         public string Type { get; }
@@ -138,6 +154,20 @@ out.append("        /// <returns>Entries learned by that job.</returns>")
 out.append("        public static IEnumerable<AbilityCatalogEntry> ForJob(int jobId)")
 out.append("        {")
 out.append("            return All.Where(e => e.JobId == jobId).OrderBy(e => e.Level).ThenBy(e => e.Name);")
+out.append("        }")
+out.append("")
+out.append("        /// <summary>Finds an entry by English name (case-insensitive); null when not catalogued.</summary>")
+out.append("        /// <param name=\"name\">English ability name, e.g. \"Accession\".</param>")
+out.append("        /// <returns>The matching entry, or null.</returns>")
+out.append("        public static AbilityCatalogEntry FindByName(string name)")
+out.append("        {")
+out.append("            if (string.IsNullOrWhiteSpace(name))")
+out.append("            {")
+out.append("                return null;")
+out.append("            }")
+out.append("")
+out.append("            string trimmed = name.Trim();")
+out.append("            return All.FirstOrDefault(e => string.Equals(e.Name, trimmed, System.StringComparison.OrdinalIgnoreCase));")
 out.append("        }")
 out.append("    }")
 out.append("}")

@@ -31,6 +31,16 @@ namespace CurePlease.Settings
             "GEO", "RUN",
         };
 
+        /// <summary>Job id (1-22) -> full English job name.</summary>
+        private static readonly string[] JobFullNames =
+        {
+            string.Empty,
+            "Warrior", "Monk", "White Mage", "Black Mage", "Red Mage", "Thief",
+            "Paladin", "Dark Knight", "Beastmaster", "Bard", "Ranger", "Samurai",
+            "Ninja", "Dragoon", "Summoner", "Blue Mage", "Corsair", "Puppetmaster",
+            "Dancer", "Scholar", "Geomancer", "Rune Fencer",
+        };
+
         public const string DefaultProfileName = "default";
 
         private readonly SettingsService _settings;
@@ -76,6 +86,16 @@ namespace CurePlease.Settings
         {
             return jobId < JobAbbreviations.Length && JobAbbreviations[jobId].Length > 0
                 ? JobAbbreviations[jobId]
+                : null;
+        }
+
+        /// <summary>Full English job name for a job id ("White Mage"); null when unknown.</summary>
+        /// <param name="jobId">Job id (1-22).</param>
+        /// <returns>The full job name, or null.</returns>
+        public static string JobFullName(byte jobId)
+        {
+            return jobId < JobFullNames.Length && JobFullNames[jobId].Length > 0
+                ? JobFullNames[jobId]
                 : null;
         }
 

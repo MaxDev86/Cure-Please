@@ -40,14 +40,13 @@
                       ToolTip="Off = the manually picked profile stays active across job/character changes (a notice is logged instead)."/>
         </StackPanel>
 
-        <!-- Player state -->
+        <!-- Player state: compact job line only — full status lives in Character Info -->
         <StackPanel Orientation="Horizontal" Grid.Row="2" Margin="0,0,0,6">
-            <TextBlock x:Name="PlayerText" Text="—" FontFamily="Consolas" VerticalAlignment="Center"/>
             <TextBlock x:Name="JobStatsText" Text="" FontFamily="Consolas" FontWeight="Bold"
-                       VerticalAlignment="Center" Margin="16,0,0,0"/>
-            <Button x:Name="JobInfoButton" Content="More Info…" Padding="6,0" Margin="8,0,0,0"
+                       VerticalAlignment="Center"/>
+            <Button x:Name="JobInfoButton" Content="Character Info…" Padding="6,0" Margin="8,0,0,0"
                     VerticalAlignment="Center" Click="JobInfoButton_Click" Visibility="Collapsed"
-                    ToolTip="All jobs: level, mastery, job points"/>
+                    ToolTip="Live status, all jobs, spells, and abilities"/>
         </StackPanel>
 
         <!-- Party/alliance list: slots 0-5 own party, 6-11 / 12-17 alliance parties -->

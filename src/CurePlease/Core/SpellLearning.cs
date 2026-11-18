@@ -19,6 +19,14 @@ namespace CurePlease.Core
 
         /// <summary>Level requirement met but the ability requires merit point allocation.</summary>
         MeritGated,
+
+        /// <summary>
+        /// Level requirement met but the learned state cannot be read: the client's
+        /// known-ability mask is a snapshot of jobs used since login, not an
+        /// account-wide map (live-verified — unlike the known-spell mask). A set bit
+        /// is always a true learned ability; a cleared bit proves nothing off-job.
+        /// </summary>
+        Unknown,
     }
 
     /// <summary>

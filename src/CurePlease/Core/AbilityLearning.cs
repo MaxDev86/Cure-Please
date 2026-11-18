@@ -10,21 +10,70 @@ namespace CurePlease.Core
         /// <summary>
         /// Classifies an ability: merit-gated abilities (Altruism, Tranquility, ...) show
         /// as <see cref="SpellLearnState.MeritGated"/> when the level is met but the merit
-        /// was never allocated; everything else follows the spell classification.
+        /// was never allocated. Stratagems are granted automatically at level — the
+        /// known-ability mask only mirrors the JA menu, which hides them until the
+        /// matching Arts is active (live-verified) — so they classify by level alone.
+        /// Everything else follows the spell classification.
         /// </summary>
         /// <param name="known">True when the character's known-ability mask has the ability.</param>
         /// <param name="jobLevel">The character's level in the ability's job.</param>
-        /// <param name="requiredLevel">Level the ability is learned at.</param>
-        /// <param name="meritGated">True when the ability requires merit point allocation.</param>
+        /// <param name="entry">The catalog entry for the ability.</param>
         /// <returns>The learning state for display.</returns>
-        public static SpellLearnState Classify(bool known, int jobLevel, int requiredLevel, bool meritGated)
+        public static SpellLearnState Classify(bool known, int jobLevel, AbilityCatalogEntry entry)
         {
-            if (!known && meritGated && jobLevel >= requiredLevel)
+            if (known)
+            {
+                return SpellLearnState.Learned;
+            }
+
+            if (entry.MeritGated && jobLevel >= entry.Level)
             {
                 return SpellLearnState.MeritGated;
             }
 
-            return SpellLearning.Classify(known, jobLevel, requiredLevel);
+            if (entry.Type == "Stratagem")
+            {
+                return jobLevel >= entry.Level ? SpellLearnState.Learned : SpellLearnState.Locked;
+            }
+
+            return SpellLearning.Classify(false, jobLevel, entry.Level);
+        }
+
+        /// <summary>
+        /// True when a stratagem is usable by the given job combination, independent of
+        /// the known-ability mask (which only reflects the JA menu under Arts). Sub-job
+        /// access follows the grimoire chart: stratagems up to 40 are sub-accessible,
+        /// 55 (Rapture, Ebullience) additionally needs any Master Leveled job, merit
+        /// stratagems and 75+ are main-job only (merit allocation is not readable —
+        /// the mask under Arts is the only evidence for those).
+        /// </summary>
+        /// <param name="entry">The stratagem's catalog entry.</param>
+        /// <param name="mainJob">Current main job id (SCH = 20).</param>
+        /// <param name="mainJobLevel">Current main job level.</param>
+        /// <param name="subJob">Current sub job id (0 = none).</param>
+        /// <param name="subJobLevel">Current sub job level.</param>
+        /// <param name="anyJobMastered">True when any job on the character is master leveled.</param>
+        /// <returns>True when the stratagem is granted to this job combination.</returns>
+        public static bool StratagemAccessible(AbilityCatalogEntry entry, byte mainJob, int mainJobLevel,
+            byte subJob, int subJobLevel, bool anyJobMastered)
+        {
+            const byte Scholar = 20;
+            if (entry == null || entry.Type != "Stratagem" || entry.MeritGated)
+            {
+                return false;
+            }
+
+            if (mainJob == Scholar && mainJobLevel >= entry.Level)
+            {
+                return true;
+            }
+
+            if (subJob == Scholar && subJobLevel >= entry.Level)
+            {
+                return entry.Level <= 40 || (entry.Level <= 55 && anyJobMastered);
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -49,6 +98,16 @@ namespace CurePlease.Core
             if (entry.ItemLearned)
             {
                 notes = Append(notes, "Learned from an item (COR rolls: use the matching die)");
+            }
+
+            if (entry.WhiteGrimoire)
+            {
+                notes = Append(notes, "White grimoire — usable only while Light Arts is active");
+            }
+
+            if (entry.BlackGrimoire)
+            {
+                notes = Append(notes, "Black grimoire — usable only while Dark Arts is active");
             }
 
             return notes;

@@ -3,6 +3,19 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Character Info" Height="640" Width="560">
     <TabControl Margin="8">
+        <TabItem Header="Status">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="4,8,4,4">
+                    <TextBlock x:Name="StatusIdentityText" FontFamily="Consolas" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="StatusVitalsText" FontFamily="Consolas" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                    <TextBlock x:Name="StatusZoneText" FontFamily="Consolas" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                    <TextBlock x:Name="StatusPetText" FontFamily="Consolas" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                    <TextBlock Text="Buffs" FontWeight="Bold" Margin="0,12,0,2"/>
+                    <TextBlock x:Name="StatusBuffsText" FontFamily="Consolas" TextWrapping="Wrap"/>
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
+
         <TabItem Header="Jobs">
             <Grid Margin="0,8,0,0">
                 <Grid.RowDefinitions>
@@ -179,6 +192,9 @@
                                                     <DataTrigger Binding="{Binding State}" Value="MeritGated">
                                                         <Setter Property="Foreground" Value="DarkOrange"/>
                                                     </DataTrigger>
+                                                    <DataTrigger Binding="{Binding State}" Value="Unknown">
+                                                        <Setter Property="Foreground" Value="Gray"/>
+                                                    </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
                                         </TextBlock.Style>
@@ -191,7 +207,7 @@
                 </DataGrid>
 
                 <TextBlock Grid.Row="2" Margin="0,6,0,0" Foreground="Gray" TextWrapping="Wrap"
-                           Text="Pet commands, blood pacts, and wyvern breaths are not listed — they are pet/avatar-gated, not job-learned. COR rolls show as Learned only after using the matching die."/>
+                           Text="Pet commands, blood pacts, and wyvern breaths are not listed — they are pet/avatar-gated, not job-learned. The client only tracks learned abilities for jobs used since login, so the current main and sub job read fully; other jobs show Unknown unless still marked known from earlier in the session. Stratagems are granted automatically at level — the client only lists them while the matching Arts is active — so they classify by level on every job tab. COR rolls count as learned once the matching die has been used."/>
             </Grid>
         </TabItem>
     </TabControl>

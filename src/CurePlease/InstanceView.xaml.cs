@@ -519,7 +519,6 @@ namespace CurePlease
         {
             if (snapshot == null)
             {
-                PlayerText.Text = "—";
                 JobStatsText.Text = string.Empty;
                 _jobStatsKey = string.Empty;
                 PartyGrid.ItemsSource = null;
@@ -543,11 +542,6 @@ namespace CurePlease
             string titleSub = ProfileService.JobAbbreviation(pl.SubJob);
             SetTitle("CurePlease3 - " + pl.Name + " " + titleJob + pl.MainJobLevel
                 + (titleSub != null ? "/" + titleSub + pl.SubJobLevel : string.Empty));
-            PlayerText.Text = string.Format(
-                "{0}  HP {1}/{2} ({3}%)  MP {4}/{5}  TP {6}  Job {7}/{8}  Zone {9}  Buffs: {10}",
-                pl.Name, pl.HP, pl.HPMax, pl.HPP, pl.MP, pl.MPMax, pl.TP,
-                pl.MainJob, pl.SubJob, pl.ZoneId,
-                string.Join(",", pl.Buffs.Where(b => b > 0 && b != 255)));
 
             UpdateJobStats(pl);
 

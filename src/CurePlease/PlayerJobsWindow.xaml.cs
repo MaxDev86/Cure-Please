@@ -26,6 +26,7 @@ namespace CurePlease
         private readonly GameStateService _state;
         private List<EliteAPI.ISpell> _allSpells;
         private List<JobStatusRow> _jobStatuses;
+        private readonly System.Windows.Threading.DispatcherTimer _statusTimer;
 
         public PlayerJobsWindow(GameStateService state)
         {
@@ -34,6 +35,85 @@ namespace CurePlease
             RefreshRows();
             LoadSpells();
             LoadAbilities();
+            RefreshStatus();
+
+            // The Status tab is live data (HP/MP/buffs/pet); tick it while the window
+            // is open. The other tabs refresh on demand via their Refresh buttons.
+            _statusTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(500),
+            };
+            _statusTimer.Tick += (s, e) => RefreshStatus();
+            _statusTimer.Start();
+            Closed += (s, e) => _statusTimer.Stop();
+        }
+
+        // ---------- Status tab ----------
+
+        /// <summary>Re-reads the live player status and rewrites the Status tab text.</summary>
+        private void RefreshStatus()
+        {
+            PlayerStatusInfo s = _state.GetStatusInfo();
+            if (s == null)
+            {
+                StatusIdentityText.Text = "Not attached.";
+                StatusVitalsText.Text = string.Empty;
+                StatusZoneText.Text = string.Empty;
+                StatusPetText.Text = string.Empty;
+                StatusBuffsText.Text = string.Empty;
+                return;
+            }
+
+            string mainName = ProfileService.JobFullName(s.MainJob) ?? "Job " + s.MainJob;
+            string mainLine = s.Name + " — " + mainName + " " + s.MainJobLevel;
+            if (s.MainJobLevel == 99)
+            {
+                mainLine += s.MainJobMastered
+                    ? "  (Mastered, ML " + s.MainJobMasterLevel + ")"
+                    : "  (" + s.MainJobSpentJobPoints + "/2100 JP)";
+            }
+
+            var identity = new System.Text.StringBuilder(mainLine);
+            if (s.SubJob != 0)
+            {
+                identity.AppendLine();
+                identity.Append("Sub: " + (ProfileService.JobFullName(s.SubJob) ?? "Job " + s.SubJob)
+                    + " " + s.SubJobLevel);
+            }
+
+            if (s.MainJobMastered)
+            {
+                identity.AppendLine();
+                identity.Append("Exemplar: " + s.ExemplarPoints.ToString("N0") + " / "
+                    + s.ExemplarPointsNeeded.ToString("N0")
+                    + (s.MainJobMasterLevel >= 50 ? "  (to ML cap)" : "  (to ML " + (s.MainJobMasterLevel + 1) + ")"));
+            }
+
+            StatusIdentityText.Text = identity.ToString();
+
+            StatusVitalsText.Text = string.Format(
+                "HP {0}/{1} ({2}%)   MP {3}/{4} ({5}%)   TP {6}",
+                s.HP, s.HPMax, s.HPP, s.MP, s.MPMax, s.MPP, s.TP);
+
+            string zoneName = ZoneNames.Name(s.ZoneId);
+            StatusZoneText.Text = "Zone: " + (zoneName ?? "Unknown") + " (" + s.ZoneId + ")"
+                + "   Status: " + s.EntityStatus;
+
+            StatusPetText.Text = s.HasPet
+                ? string.Format("Pet: {0}   HP {1}%   MP {2}%   TP {3}", s.PetName, s.PetHPP, s.PetMPP, s.PetTP)
+                : "Pet: none";
+
+            StatusBuffsText.Text = string.Join("  ", s.Buffs
+                .Where(b => b > 0 && b != 255)
+                .Select(BuffDisplay));
+        }
+
+        /// <summary>"Haste (57)" for a known status effect id; "#999" when the id is unmapped.</summary>
+        private static string BuffDisplay(short buffId)
+        {
+            return Enum.IsDefined(typeof(StatusEffect), buffId)
+                ? ((StatusEffect)buffId).ToString().Replace('_', ' ') + " (" + buffId + ")"
+                : "#" + buffId;
         }
 
         // ---------- Jobs tab ----------
@@ -273,11 +353,33 @@ namespace CurePlease
             bool learnableOnly = AbilityLearnableOnlyBox.IsChecked == true;
             bool showLocked = AbilityShowLockedBox.IsChecked == true;
 
+            // The known-ability mask is a snapshot of jobs used since login, not an
+            // account-wide map (live-verified: WHM/SCH bits stayed set after switching
+            // to DRK/BST; the new job's bits stayed 0). A set bit is always a true
+            // learned ability, but a cleared bit proves nothing off the current job —
+            // off-job rows with a cleared bit can only be classified by level.
+            _state.GetCurrentJobs(out byte mainJob, out byte subJob);
+            bool onJob = selected.JobId == mainJob || (subJob != 0 && selected.JobId == subJob);
+
             var rows = new List<AbilityRow>();
             foreach (AbilityCatalogEntry entry in AbilityCatalog.ForJob(selected.JobId))
             {
-                SpellLearnState state = AbilityLearning.Classify(
-                    _state.KnowsAbility(entry.Id), jobLevel, entry.Level, entry.MeritGated);
+                SpellLearnState state;
+                if (_state.KnowsAbility(entry.Id))
+                {
+                    state = SpellLearnState.Learned;
+                }
+                else if (onJob || entry.Type == "Stratagem")
+                {
+                    // Stratagems are granted automatically at level; the mask only
+                    // mirrors the JA menu under Arts, so classify them by level on
+                    // every job tab.
+                    state = AbilityLearning.Classify(false, jobLevel, entry);
+                }
+                else
+                {
+                    state = jobLevel >= entry.Level ? SpellLearnState.Unknown : SpellLearnState.Locked;
+                }
                 if (learnableOnly && state != SpellLearnState.Learnable)
                 {
                     continue;
@@ -305,7 +407,11 @@ namespace CurePlease
                 Bucket = AbilityLearning.LevelBucket(entry.Level);
                 State = state;
                 Status = state == SpellLearnState.MeritGated ? "Merit" : state.ToString();
-                StatusTooltip = AbilityLearning.Notes(entry);
+                string notes = AbilityLearning.Notes(entry);
+                StatusTooltip = state == SpellLearnState.Unknown
+                    ? (notes == null ? "" : notes + "\n")
+                        + "Learned state is only readable while this is your main or sub job"
+                    : notes;
                 Type = entry.Type;
             }
 
