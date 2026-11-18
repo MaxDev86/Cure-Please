@@ -155,7 +155,7 @@ namespace CurePlease.Core
             foreach (RequestedAction action in requested)
             {
                 string reason = action.IsAbility
-                    ? state.HasAbility(action.Name) ? null : "not available to the current job"
+                    ? state.HasAbilityForUse(action.Name) ? null : "not available to the current job"
                     : SpellProblem(state, action.Name, action.InstrumentGranted);
                 if (reason != null)
                 {
@@ -205,7 +205,7 @@ namespace CurePlease.Core
 
             if (candidate.IsJobAbility)
             {
-                return state.HasAbility(candidate.ActionName);
+                return state.HasAbilityForUse(candidate.ActionName);
             }
 
             bool instrumentGranted = candidate.Category == ActionCategory.Song

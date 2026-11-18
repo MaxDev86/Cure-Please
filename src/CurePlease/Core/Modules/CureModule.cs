@@ -287,7 +287,7 @@ namespace CurePlease.Core.Modules
 
             bool whiteGrimoire = pl.HasBuff(StatusEffect.Light_Arts)
                 || pl.HasBuff(StatusEffect.Addendum_White);
-            if (!whiteGrimoire || !_state.HasAbility("Rapture"))
+            if (!whiteGrimoire || !_state.HasAbilityForUse("Rapture"))
             {
                 return false;
             }

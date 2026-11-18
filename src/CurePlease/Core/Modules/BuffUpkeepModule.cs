@@ -203,7 +203,7 @@ namespace CurePlease.Core.Modules
         /// </summary>
         private bool StratagemReady(PlayerState pl, string stratagemName)
         {
-            if (!pl.HasBuff(StatusEffect.Light_Arts) || !_state.HasAbility(stratagemName))
+            if (!pl.HasBuff(StatusEffect.Light_Arts) || !_state.HasAbilityForUse(stratagemName))
             {
                 return false;
             }
