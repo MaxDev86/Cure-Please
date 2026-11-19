@@ -545,12 +545,13 @@ namespace CurePlease
 
             UpdateJobStats(pl);
 
+            string followTarget = _settings.Current.General.FollowTargetName ?? string.Empty;
             PartyGrid.ItemsSource = snapshot.PartyMembers
                 .Where(m => m.Active && m.Name.Length > 0)
                 .GroupBy(m => m.ServerId) // stale duplicate slots can carry the same character twice
                 .Select(g => g.First())
                 .OrderBy(m => m.MemberNumber)
-                .Select(m => new PartyRow(m, pl.Name, _playerBuffs))
+                .Select(m => new PartyRow(m, pl.Name, _playerBuffs, followTarget))
                 .ToList();
         }
 
@@ -651,48 +652,30 @@ namespace CurePlease
             popup.Show();
         }
 
-        // ----- follow (party row right-click) -----
-
-        /// <summary>Party row right-click: sets the follow target (persisted in the active profile).</summary>
-        private void FollowMenuItem_Click(object sender, RoutedEventArgs e)
+        /// <summary>The PartyRow behind a grid cell button.</summary>
+        private static PartyRow ButtonRow(object sender)
         {
-            PartyRow row = ContextMenuRow(sender);
-            if (row == null)
-            {
-                return;
-            }
-
-            if (row.IsSelf)
-            {
-                AppendLog("Follow: cannot follow yourself");
-                return;
-            }
-
-            CurePleaseSettings updated = _settings.Current.DeepClone();
-            updated.General.FollowTargetName = row.Name;
-            _settings.Adopt(updated);
-            PersistQuietly();
-            AppendLog("Follow target: " + row.Name);
+            return (sender as FrameworkElement)?.DataContext as PartyRow;
         }
 
-        private void StopFollowMenuItem_Click(object sender, RoutedEventArgs e)
+        // ----- follow (party row button) -----
+
+        /// <summary>Party row Follow/Stop button: sets or clears the follow target (persisted in the active profile). The PL cannot follow itself.</summary>
+        private void FollowButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_settings.Current.General.FollowTargetName.Length == 0)
+            PartyRow row = ButtonRow(sender);
+            if (row == null || row.IsSelf)
             {
                 return;
             }
 
+            string current = _settings.Current.General.FollowTargetName;
+            bool clearing = current.Length > 0 && row.Name.Equals(current, StringComparison.OrdinalIgnoreCase);
             CurePleaseSettings updated = _settings.Current.DeepClone();
-            updated.General.FollowTargetName = string.Empty;
+            updated.General.FollowTargetName = clearing ? string.Empty : row.Name;
             _settings.Adopt(updated);
             PersistQuietly();
-            AppendLog("Follow target cleared");
-        }
-
-        /// <summary>The PartyRow under a context-menu click (the grid selects the row on right-click).</summary>
-        private PartyRow ContextMenuRow(object sender)
-        {
-            return PartyGrid.SelectedItem as PartyRow;
+            AppendLog(clearing ? "Follow target cleared" : "Follow target: " + row.Name);
         }
 
         /// <summary>Saves the active profile after a quick settings change; warns in the log on failure.</summary>
@@ -806,16 +789,27 @@ namespace CurePlease
 
         private sealed class PartyRow
         {
-            public PartyRow(PartyMemberState m, string plName, PlayerBuffAssignments assignments)
+            public PartyRow(PartyMemberState m, string plName, PlayerBuffAssignments assignments, string followTargetName)
             {
                 MemberNumber = m.MemberNumber;
                 PartyDisplay = "P" + (m.PartyIndex + 1);
                 Name = m.Name;
                 IsSelf = m.Name.Equals(plName, StringComparison.OrdinalIgnoreCase);
+                CanFollow = !IsSelf;
+                IsFollowTarget = !IsSelf && followTargetName.Length > 0
+                    && m.Name.Equals(followTargetName, StringComparison.OrdinalIgnoreCase);
+                FollowLabel = IsFollowTarget ? "Stop" : "Follow";
+                FollowTooltip = IsSelf
+                    ? "The PL cannot follow itself"
+                    : IsFollowTarget ? "Stop following " + m.Name : "Follow " + m.Name;
                 CurrentHP = m.CurrentHP;
                 CurrentHPP = m.CurrentHPP + "%";
                 CurrentMP = m.CurrentMP;
                 CurrentTP = m.CurrentTP;
+                HPP = m.CurrentHPP;
+                MPP = m.CurrentMPP;
+                HpText = m.CurrentHP.ToString("N0") + "  ·  " + m.CurrentHPP + "%";
+                MpText = m.CurrentMP.ToString("N0") + "  ·  " + m.CurrentMPP + "%";
                 JobDisplay = m.MainJob + "/" + m.SubJob;
                 BuffSummary = IsSelf
                     ? "via Settings → Buff Upkeep"
@@ -829,10 +823,18 @@ namespace CurePlease
             public string PartyDisplay { get; }
             public string Name { get; }
             public bool IsSelf { get; }
+            public bool CanFollow { get; }
+            public bool IsFollowTarget { get; }
+            public string FollowLabel { get; }
+            public string FollowTooltip { get; }
             public uint CurrentHP { get; }
             public string CurrentHPP { get; }
             public uint CurrentMP { get; }
             public uint CurrentTP { get; }
+            public int HPP { get; }
+            public int MPP { get; }
+            public string HpText { get; }
+            public string MpText { get; }
             public string JobDisplay { get; }
             public string BuffSummary { get; }
             public string BuffButtonTooltip { get; }

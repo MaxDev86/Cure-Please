@@ -1,6 +1,30 @@
 <UserControl x:Class="CurePlease.InstanceView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:CurePlease">
+    <UserControl.Resources>
+        <local:PercentBarBrushConverter x:Key="BarBrush"/>
+
+        <!-- Flat progress bar: rounded fill on a light track, no chrome/animation -->
+        <Style x:Key="FlatBar" TargetType="ProgressBar">
+            <Setter Property="Minimum" Value="0"/>
+            <Setter Property="Maximum" Value="100"/>
+            <Setter Property="Height" Value="15"/>
+            <Setter Property="Background" Value="#FFF0F0F0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="2" SnapsToDevicePixels="True">
+                            <Grid x:Name="PART_Track">
+                                <Rectangle x:Name="PART_Indicator" HorizontalAlignment="Left"
+                                           Fill="{TemplateBinding Foreground}" RadiusX="2" RadiusY="2"/>
+                            </Grid>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
     <Grid Margin="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -52,19 +76,43 @@
         <!-- Party/alliance list: slots 0-5 own party, 6-11 / 12-17 alliance parties -->
         <DataGrid x:Name="PartyGrid" Grid.Row="3" AutoGenerateColumns="False" IsReadOnly="True"
                   HeadersVisibility="Column" Margin="0,0,0,6" CanUserAddRows="False">
-            <DataGrid.ContextMenu>
-                <ContextMenu>
-                    <MenuItem Header="Follow this player" Click="FollowMenuItem_Click"/>
-                    <MenuItem Header="Stop following" Click="StopFollowMenuItem_Click"/>
-                </ContextMenu>
-            </DataGrid.ContextMenu>
+            <DataGrid.RowStyle>
+                <Style TargetType="DataGridRow">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsSelf}" Value="True">
+                            <Setter Property="FontWeight" Value="Bold"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </DataGrid.RowStyle>
             <DataGrid.Columns>
                 <DataGridTextColumn Header="Pt" Binding="{Binding PartyDisplay}" Width="30"/>
                 <DataGridTextColumn Header="#" Binding="{Binding MemberNumber}" Width="30"/>
                 <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="120"/>
-                <DataGridTextColumn Header="HP" Binding="{Binding CurrentHP}" Width="70"/>
-                <DataGridTextColumn Header="HPP" Binding="{Binding CurrentHPP}" Width="50"/>
-                <DataGridTextColumn Header="MP" Binding="{Binding CurrentMP}" Width="70"/>
+                <DataGridTemplateColumn Header="HP" Width="135">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Grid Margin="2,1">
+                                <ProgressBar Style="{StaticResource FlatBar}" Value="{Binding HPP, Mode=OneWay}"
+                                             Foreground="{Binding HPP, Converter={StaticResource BarBrush}}"/>
+                                <TextBlock Text="{Binding HpText}" HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" FontSize="10" Foreground="#FF202020"/>
+                            </Grid>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="MP" Width="135">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Grid Margin="2,1">
+                                <ProgressBar Style="{StaticResource FlatBar}" Value="{Binding MPP, Mode=OneWay}"
+                                             Foreground="{Binding MPP, Converter={StaticResource BarBrush}, ConverterParameter=mp}"/>
+                                <TextBlock Text="{Binding MpText}" HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" FontSize="10" Foreground="#FF202020"/>
+                            </Grid>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTextColumn Header="TP" Binding="{Binding CurrentTP}" Width="60"/>
                 <DataGridTextColumn Header="Job" Binding="{Binding JobDisplay}" Width="80"/>
                 <DataGridTextColumn Header="Buffs" Binding="{Binding BuffSummary}" Width="*"/>
@@ -73,6 +121,14 @@
                         <DataTemplate>
                             <Button Content="Buffs…" Padding="6,0" Click="PlayerBuffsButton_Click"
                                     ToolTip="{Binding BuffButtonTooltip}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="" Width="64">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button Content="{Binding FollowLabel}" Padding="6,0" Click="FollowButton_Click"
+                                    IsEnabled="{Binding CanFollow}" ToolTip="{Binding FollowTooltip}"/>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
