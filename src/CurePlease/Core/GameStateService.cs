@@ -89,6 +89,12 @@ namespace CurePlease.Core
 
         /// <summary>Client entity status name ("Engaged", "Standing", ...).</summary>
         public string EntityStatus { get; set; } = string.Empty;
+
+        /// <summary>True while the position keeps changing across ticks (see <see cref="PlayerState.IsMoving"/>).</summary>
+        public bool IsMoving { get; set; }
+
+        /// <summary>How long the player has been standing still (casting settle window).</summary>
+        public TimeSpan StationaryFor { get; set; }
         public short[] Buffs { get; set; } = Array.Empty<short>();
 
         public bool HasPet { get; set; }
@@ -110,6 +116,33 @@ namespace CurePlease.Core
         private EliteAPI _monitored;
         private int _plProcessId;
         private int _monitoredProcessId;
+
+        // ---- movement tracking (position deltas per tick) ----
+        // The entity status has no "moving" value, so movement is derived from
+        // X/Y/Z deltas. _lastMoveUtc feeds StationaryFor, which CastingService
+        // waits on before casting (the server lags the client on movement stop).
+        private float _prevPosX, _prevPosY, _prevPosZ;
+        private int _prevPosZone = -1;
+        private bool _hasPrevPos;
+        private DateTime _lastMoveUtc = DateTime.MinValue;
+
+        /// <summary>Position delta (squared, yalms) that counts as movement between two ticks.</summary>
+        private const float MoveEpsilonSq = 0.0001f; // 0.01 yalms
+
+        /// <summary>
+        /// How long the player has been standing still (TimeSpan.MaxValue when no
+        /// movement has ever been observed this attach).
+        /// </summary>
+        public TimeSpan StationaryFor
+        {
+            get
+            {
+                return _lastMoveUtc == DateTime.MinValue ? TimeSpan.MaxValue : DateTime.UtcNow - _lastMoveUtc;
+            }
+        }
+
+        /// <summary>True while the position keeps changing across snapshot ticks.</summary>
+        public bool IsPlayerMoving { get; private set; }
 
         public ConnectionState State { get; private set; } = ConnectionState.Detached;
 
@@ -157,7 +190,17 @@ namespace CurePlease.Core
             _pl?.Dispose();
             _pl = null;
             _plProcessId = 0;
+            ResetMovementTracking();
             SetState(ConnectionState.Detached);
+        }
+
+        /// <summary>Drops movement history (attach/login/zone boundaries).</summary>
+        private void ResetMovementTracking()
+        {
+            _hasPrevPos = false;
+            _prevPosZone = -1;
+            _lastMoveUtc = DateTime.MinValue;
+            IsPlayerMoving = false;
         }
 
         /// <summary>
@@ -185,6 +228,7 @@ namespace CurePlease.Core
                 LastLoginStatus = _pl.Player.LoginStatus;
                 if (LastLoginStatus != (int)LoginStatus.LoggedIn)
                 {
+                    ResetMovementTracking();
                     SetState(ConnectionState.AttachedNotLoggedIn);
                     return null;
                 }
@@ -213,6 +257,34 @@ namespace CurePlease.Core
                     Y = _pl.Player.Y,
                     Z = _pl.Player.Z,
                 };
+
+                // Movement detection via position deltas. A zone change without a
+                // load screen (rare) counts as movement so casts still settle.
+                bool movedThisTick = false;
+                if (_hasPrevPos)
+                {
+                    if (_prevPosZone == player.ZoneId)
+                    {
+                        float dx = player.X - _prevPosX, dy = player.Y - _prevPosY, dz = player.Z - _prevPosZ;
+                        movedThisTick = dx * dx + dy * dy + dz * dz > MoveEpsilonSq;
+                    }
+                    else
+                    {
+                        movedThisTick = true;
+                    }
+                }
+                if (movedThisTick)
+                {
+                    _lastMoveUtc = DateTime.UtcNow;
+                }
+                _prevPosX = player.X;
+                _prevPosY = player.Y;
+                _prevPosZ = player.Z;
+                _prevPosZone = player.ZoneId;
+                _hasPrevPos = true;
+                IsPlayerMoving = movedThisTick;
+                player.IsMoving = movedThisTick;
+                player.StationaryFor = StationaryFor;
 
                 List<PartyMemberState> members = new List<PartyMemberState>(18);
                 foreach (EliteAPI.PartyMember m in _pl.Party.GetPartyMembers())
@@ -1071,6 +1143,8 @@ namespace CurePlease.Core
                     TP = _pl.Player.TP,
                     ZoneId = _pl.Player.ZoneId,
                     EntityStatus = _pl.Player.PlayerState.ToString().Replace('_', ' '),
+                    IsMoving = IsPlayerMoving,
+                    StationaryFor = StationaryFor,
                     Buffs = info.Buffs ?? Array.Empty<short>(),
                 };
 

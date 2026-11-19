@@ -70,6 +70,17 @@ namespace CurePlease.Core
         private static readonly TimeSpan SettleDelay = TimeSpan.FromMilliseconds(400);
 
         /// <summary>
+        /// How long the player must stand still before a cast is sent. The client
+        /// stops rendering movement immediately, but the server (~Japan RTT) still
+        /// considers the character mid-step for a few hundred ms, so casting the
+        /// instant movement stops gets the cast eaten server-side.
+        /// </summary>
+        private static readonly TimeSpan StationarySettle = TimeSpan.FromMilliseconds(500);
+
+        /// <summary>Max time to wait for the player to stop moving before giving up the cast.</summary>
+        private static readonly TimeSpan StationaryWindow = TimeSpan.FromSeconds(3);
+
+        /// <summary>
         /// A "blocked" (category 8 / 24931) event is only decisive when no cast ever
         /// starts. When another addon (GearSwap re-issue) or a stale reject produces a
         /// blocked event for a cast that IS going through, the reject races ahead of
@@ -79,8 +90,10 @@ namespace CurePlease.Core
         /// </summary>
         private static readonly TimeSpan BlockedGrace = TimeSpan.FromMilliseconds(1500);
 
-        // Latest cast event reported by the addon: 0 none, 1 finished, 2 interrupted, 3 blocked.
-        private int _addonCastEvent;
+        // Latest addon cast event, stored as (int)CastEventKind + 1 so that 0 means
+        // "no event" (Interlocked works on ints, not Nullable<CastEventKind>).
+        // Always go through TakeAddonEvent to decode.
+        private int _addonCastEventRaw;
 
         public CastingService(GameStateService state)
         {
@@ -94,7 +107,14 @@ namespace CurePlease.Core
         /// </summary>
         public void NotifyCastEvent(CastEventKind kind)
         {
-            Interlocked.Exchange(ref _addonCastEvent, (int)kind + 1);
+            Interlocked.Exchange(ref _addonCastEventRaw, (int)kind + 1);
+        }
+
+        /// <summary>Consumes the pending addon cast event, or null when none has arrived.</summary>
+        private CastEventKind? TakeAddonEvent()
+        {
+            int raw = Interlocked.Exchange(ref _addonCastEventRaw, 0);
+            return raw == 0 ? (CastEventKind?)null : (CastEventKind)(raw - 1);
         }
 
         /// <summary>True while a cast is being executed (for UI display only — never used as a gate).</summary>
@@ -113,11 +133,26 @@ namespace CurePlease.Core
             try
             {
                 await WaitForCastBarIdle(ct).ConfigureAwait(false);
-                Interlocked.Exchange(ref _addonCastEvent, 0);
+
+                // Movement interrupts casting — wait for the settle window rather
+                // than send a cast the server will eat.
+                if (!await WaitForStationary(ct).ConfigureAwait(false))
+                {
+                    result.Outcome = CastOutcome.NotStarted;
+                    result.Detail = "player moving";
+                    result.Elapsed = sw.Elapsed;
+                    return result;
+                }
+
+                // Drop stale addon events as late as possible: anything that arrived
+                // during the idle/stationary waits belongs to someone else's cast,
+                // and clearing here keeps it from being misattributed to ours.
+                Interlocked.Exchange(ref _addonCastEventRaw, 0);
 
                 if (!_state.SendCommand("/ma \"" + spellName + "\" " + targetName))
                 {
                     result.Outcome = CastOutcome.SendFailed;
+                    result.Detail = "SendCommand returned false (detached?)";
                     return result;
                 }
 
@@ -146,11 +181,12 @@ namespace CurePlease.Core
             await _castSlot.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                Interlocked.Exchange(ref _addonCastEvent, 0);
+                Interlocked.Exchange(ref _addonCastEventRaw, 0);
 
                 if (!_state.SendCommand("/item \"" + itemName + "\" " + target))
                 {
                     result.Outcome = CastOutcome.SendFailed;
+                    result.Detail = "SendCommand returned false (detached?)";
                     return result;
                 }
 
@@ -185,11 +221,12 @@ namespace CurePlease.Core
                 // JAs generate no cast events themselves, but a stale event left over
                 // from an earlier cast would poison the next CastAsync — keep the
                 // slot clean here too.
-                Interlocked.Exchange(ref _addonCastEvent, 0);
+                Interlocked.Exchange(ref _addonCastEventRaw, 0);
 
                 if (!_state.SendCommand("/ja \"" + abilityName + "\" " + target))
                 {
                     result.Outcome = CastOutcome.SendFailed;
+                    result.Detail = "SendCommand returned false (detached?)";
                     return result;
                 }
 
@@ -257,6 +294,27 @@ namespace CurePlease.Core
         }
 
         /// <summary>
+        /// Waits until the player has been stationary for <see cref="StationarySettle"/>,
+        /// giving up after <see cref="StationaryWindow"/>. Polls the movement tracking
+        /// in <see cref="GameStateService"/> (position deltas per snapshot tick).
+        /// </summary>
+        /// <returns><c>true</c> when the player is settled and safe to cast.</returns>
+        private async Task<bool> WaitForStationary(CancellationToken ct)
+        {
+            Stopwatch wait = Stopwatch.StartNew();
+            while (_state.StationaryFor < StationarySettle)
+            {
+                if (wait.Elapsed > StationaryWindow)
+                {
+                    return false;
+                }
+
+                await Task.Delay(50, ct).ConfigureAwait(false);
+            }
+            return true;
+        }
+
+        /// <summary>
         /// Polls the cast bar: waits for the cast to start, then for completion.
         /// The addon's 0x028 action events (checked first every iteration) are the
         /// primary outcome authority; the bar is the fallback for when the addon is
@@ -291,8 +349,8 @@ namespace CurePlease.Core
             {
                 ct.ThrowIfCancellationRequested();
 
-                int addonEvent = Interlocked.Exchange(ref _addonCastEvent, 0);
-                if (addonEvent == (int)CastEventKind.Finished + 1)
+                CastEventKind? addonEvent = TakeAddonEvent();
+                if (addonEvent == CastEventKind.Finished)
                 {
                     if (strayBlocked)
                     {
@@ -303,12 +361,12 @@ namespace CurePlease.Core
                     return CastOutcome.Success;
                 }
 
-                if (addonEvent == (int)CastEventKind.Interrupted + 1)
+                if (addonEvent == CastEventKind.Interrupted)
                 {
                     return CastOutcome.Interrupted;
                 }
 
-                if (addonEvent == (int)CastEventKind.Blocked + 1)
+                if (addonEvent == CastEventKind.Blocked)
                 {
                     if (started)
                     {
@@ -409,6 +467,8 @@ namespace CurePlease.Core
                 await Task.Delay(50, ct).ConfigureAwait(false);
             }
 
+            result.Detail = "cast bar never resolved within " + MaxCastDuration.TotalSeconds.ToString("0")
+                + "s (started=" + started + ", max ratio " + maxRatio.ToString("0.00") + ")";
             return CastOutcome.Timeout;
         }
     }

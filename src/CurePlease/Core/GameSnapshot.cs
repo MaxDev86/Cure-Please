@@ -76,6 +76,20 @@ namespace CurePlease.Core
         public float Y { get; set; }
         public float Z { get; set; }
 
+        /// <summary>
+        /// True when the position changed between the last two snapshot ticks. The
+        /// entity status has no "moving" value, so movement is derived from X/Y/Z
+        /// deltas; false on the first tick after attach/login.
+        /// </summary>
+        public bool IsMoving { get; set; }
+
+        /// <summary>
+        /// How long the player has been standing still. Casting is interrupted by
+        /// movement, and the server lags the client (~Japan RTT), so casts should
+        /// wait for a settle period after movement stops — see CastingService.
+        /// </summary>
+        public TimeSpan StationaryFor { get; set; }
+
         public uint EstimatedHpLoss
         {
             get

@@ -96,8 +96,13 @@ namespace CurePlease
                 s.HP, s.HPMax, s.HPP, s.MP, s.MPMax, s.MPP, s.TP);
 
             string zoneName = ZoneNames.Name(s.ZoneId);
+            string movement = s.IsMoving
+                ? "moving"
+                : s.StationaryFor == TimeSpan.MaxValue
+                    ? "stationary"
+                    : "stationary " + s.StationaryFor.TotalSeconds.ToString("0.0") + "s";
             StatusZoneText.Text = "Zone: " + (zoneName ?? "Unknown") + " (" + s.ZoneId + ")"
-                + "   Status: " + s.EntityStatus;
+                + "   Status: " + s.EntityStatus + "   " + movement;
 
             StatusPetText.Text = s.HasPet
                 ? string.Format("Pet: {0}   HP {1}%   MP {2}%   TP {3}", s.PetName, s.PetHPP, s.PetMPP, s.PetTP)
