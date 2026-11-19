@@ -40,6 +40,14 @@ namespace CurePlease.Core
             public DateTime LastSeenUtc;
         }
 
+        /// <summary>
+        /// Cap on name-keyed dictionaries (_buffs, _handshakesByName). The port is
+        /// loopback-only, but any local process can send packets — a flood of random
+        /// names must not grow these without bound. 64 is far above the largest
+        /// possible roster (18-member alliance + trusts).
+        /// </summary>
+        private const int MaxTrackedNames = 64;
+
         private readonly ConcurrentDictionary<string, BuffEntry> _buffs =
             new ConcurrentDictionary<string, BuffEntry>(StringComparer.OrdinalIgnoreCase);
 
@@ -208,7 +216,8 @@ namespace CurePlease.Core
             if (TryParseHandshake(message, out string confirmedBy))
             {
                 LastHandshakeUtc = DateTime.UtcNow;
-                if (confirmedBy != null)
+                if (confirmedBy != null
+                    && (_handshakesByName.Count < MaxTrackedNames || _handshakesByName.ContainsKey(confirmedBy)))
                 {
                     _handshakesByName[confirmedBy] = DateTime.UtcNow;
                 }
@@ -229,7 +238,8 @@ namespace CurePlease.Core
                 return;
             }
 
-            if (TryParseBuffMessage(message, out string name, out short[] buffs))
+            if (TryParseBuffMessage(message, out string name, out short[] buffs)
+                && (_buffs.Count < MaxTrackedNames || _buffs.ContainsKey(name)))
             {
                 _buffs[name] = new BuffEntry { Buffs = buffs, LastSeenUtc = DateTime.UtcNow };
             }

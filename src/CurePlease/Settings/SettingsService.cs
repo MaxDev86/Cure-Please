@@ -73,6 +73,17 @@ namespace CurePlease.Settings
             catch (Exception ex)
             {
                 Serilog.Log.Warning(ex, "Settings load failed for {Path}; keeping current settings", path);
+
+                // Preserve the unreadable file before any future save overwrites it.
+                try
+                {
+                    File.Copy(path, path + ".bad", true);
+                }
+                catch (Exception copyEx)
+                {
+                    Serilog.Log.Warning(copyEx, "Could not back up corrupt settings file {Path}", path);
+                }
+
                 return Current;
             }
         }
@@ -85,6 +96,7 @@ namespace CurePlease.Settings
         public bool Save(CurePleaseSettings settings, string path)
         {
             settings.Version = CurePleaseSettings.CurrentVersion;
+            string temp = path + ".tmp";
 
             try
             {
@@ -92,13 +104,26 @@ namespace CurePlease.Settings
                 string json = JsonSerializer.Serialize(settings, JsonOptions);
 
                 // Write-then-rename so a crash mid-write cannot corrupt the live file.
-                string temp = path + ".tmp";
                 File.WriteAllText(temp, json);
                 File.Move(temp, path, true);
             }
             catch (Exception ex)
             {
                 Serilog.Log.Error(ex, "Settings save failed for {Path}", path);
+
+                // A failed save must not leave the temp file behind.
+                try
+                {
+                    if (File.Exists(temp))
+                    {
+                        File.Delete(temp);
+                    }
+                }
+                catch
+                {
+                    // Best effort — a leftover .tmp is harmless.
+                }
+
                 return false;
             }
 

@@ -99,14 +99,20 @@ namespace CurePlease.Core
         /// <summary>Optional addon data provider; when set, party buffs are merged into each snapshot.</summary>
         public AddonListener Addon { get; set; }
 
+        /// <summary>Floor for the inter-tick delay — a faster spin only burns CPU, the snapshot can't refresh sooner.</summary>
+        private const int MinTickDelayMs = 50;
+
+        private readonly object _lifecycleGate = new object();
         private CancellationTokenSource _cts;
         private Task _loop;
 
         // Zone tracking: a tick that was logged in followed by LoginStatus.Loading
         // (or a zone-id change between two valid snapshots) is a zone transition.
+        // _wasLoggedIn/_lastZoneId are loop-thread only; _pausedByZone is also
+        // read/written from the UI thread (ResumeFromZone/Stop), hence volatile.
         private bool _wasLoggedIn;
         private int _lastZoneId = -1;
-        private bool _pausedByZone;
+        private volatile bool _pausedByZone;
         private CurePleaseSettings _auditedSettings;
         private string _auditContextKey;
 
@@ -166,7 +172,7 @@ namespace CurePlease.Core
                 }
                 catch (Exception ex)
                 {
-                    RaiseLog(module.Name + " zone-reset error: " + ex.Message);
+                    RaiseLog(module.Name + " zone-reset error: " + ex.GetType().Name + ": " + ex.Message);
                     Serilog.Log.Error(ex, "Module {Module} OnZoneChanged failed", module.Name);
                 }
             }
@@ -181,20 +187,51 @@ namespace CurePlease.Core
 
         public void RegisterModule(IDecisionModule module)
         {
+            if (IsRunning)
+            {
+                throw new InvalidOperationException("Modules must be registered before Start().");
+            }
+
             _modules.Add(module);
         }
 
         public void Start()
         {
-            if (IsRunning)
+            lock (_lifecycleGate)
             {
-                return;
+                if (IsRunning)
+                {
+                    return;
+                }
+
+                _auditedSettings = null;
+                _auditContextKey = null;
+
+                // A previous loop may still be unwinding (Stop() is fire-and-forget).
+                // Chain onto it rather than racing it, and dispose its CTS once done.
+                CancellationTokenSource previousCts = _cts;
+                Task previousLoop = _loop;
+
+                _cts = new CancellationTokenSource();
+                CancellationToken token = _cts.Token;
+                _loop = previousLoop != null && !previousLoop.IsCompleted
+                    ? ChainAfterAsync(previousLoop, previousCts, token)
+                    : Task.Run(() => RunAsync(token));
+            }
+        }
+
+        private async Task ChainAfterAsync(Task previousLoop, CancellationTokenSource previousCts, CancellationToken token)
+        {
+            try
+            {
+                await previousLoop.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
             }
 
-            _auditedSettings = null;
-            _auditContextKey = null;
-            _cts = new CancellationTokenSource();
-            _loop = Task.Run(() => RunAsync(_cts.Token));
+            previousCts?.Dispose();
+            await RunAsync(token).ConfigureAwait(false);
         }
 
         public void Stop()
@@ -210,15 +247,36 @@ namespace CurePlease.Core
 
         public async Task StopAsync()
         {
-            _cts?.Cancel();
-            if (_loop != null)
+            CancellationTokenSource cts;
+            Task loop;
+            lock (_lifecycleGate)
+            {
+                cts = _cts;
+                loop = _loop;
+            }
+
+            cts?.Cancel();
+            if (loop != null)
             {
                 try
                 {
-                    await _loop.ConfigureAwait(false);
+                    await loop.ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
+                }
+            }
+
+            // The CTS is only safe to dispose once the loop using it has finished —
+            // and only if no new loop has taken over in the meantime (a Start during
+            // our await chains the old CTS's disposal onto the old loop instead).
+            lock (_lifecycleGate)
+            {
+                if (ReferenceEquals(_cts, cts))
+                {
+                    _cts = null;
+                    _loop = null;
+                    cts?.Dispose();
                 }
             }
         }
@@ -242,13 +300,13 @@ namespace CurePlease.Core
                 catch (Exception ex)
                 {
                     // One bad tick must never kill the loop (legacy: unhandled = crash).
-                    RaiseLog("Tick error: " + ex.Message);
+                    RaiseLog("Tick error: " + ex.GetType().Name + ": " + ex.Message);
                     Serilog.Log.Error(ex, "Engine tick failed");
                 }
 
                 CurePleaseSettings settings = _settings.Current;
                 int elapsed = Environment.TickCount - tickStart;
-                int delay = Math.Max(50, settings.General.TickIntervalMs - elapsed);
+                int delay = Math.Max(MinTickDelayMs, settings.General.TickIntervalMs - elapsed);
 
                 try
                 {
@@ -344,7 +402,7 @@ namespace CurePlease.Core
                 }
                 catch (Exception ex)
                 {
-                    RaiseLog(module.Name + " module error: " + ex.Message);
+                    RaiseLog(module.Name + " module error: " + ex.GetType().Name + ": " + ex.Message);
                     Serilog.Log.Error(ex, "Module {Module} AddCandidates failed", module.Name);
                 }
             }
@@ -410,7 +468,7 @@ namespace CurePlease.Core
                 }
                 catch (Exception ex)
                 {
-                    RaiseLog(module.Name + " feedback error: " + ex.Message);
+                    RaiseLog(module.Name + " feedback error: " + ex.GetType().Name + ": " + ex.Message);
                     Serilog.Log.Error(ex, "Module {Module} OnActionExecuted failed", module.Name);
                 }
             }

@@ -34,6 +34,7 @@ namespace CurePlease
 
         private TabItem _addTab;
         private bool _switching;
+        private bool _shutdownComplete;
         private int _nextTabNumber = 1;
         private int _addonPort;
 
@@ -295,19 +296,41 @@ namespace CurePlease
 
         private async void OnClosing(object sender, CancelEventArgs e)
         {
-            foreach (InstanceView view in SnapshotViews())
+            if (_shutdownComplete)
             {
-                try
-                {
-                    await view.ShutdownAsync();
-                }
-                catch (Exception ex)
-                {
-                    Serilog.Log.Warning(ex, "Tab shutdown failed");
-                }
+                return;
             }
 
-            _addon.Dispose();
+            // Cancel-then-close: shutdown awaits (engine stop, addon unload, detach)
+            // must finish before the window is allowed to die — without e.Cancel the
+            // process exits at the first await and mid-detach state is left behind.
+            e.Cancel = true;
+
+            try
+            {
+                foreach (InstanceView view in SnapshotViews())
+                {
+                    try
+                    {
+                        await view.ShutdownAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        Serilog.Log.Warning(ex, "Tab shutdown failed");
+                    }
+                }
+
+                _addon.Dispose();
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "Window shutdown failed");
+            }
+            finally
+            {
+                _shutdownComplete = true;
+                Close();
+            }
         }
     }
 }
