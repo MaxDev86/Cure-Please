@@ -133,7 +133,7 @@ namespace CurePlease.Core.Modules
         /// <summary>Transient outcomes (rejected cast, interrupted) retry this soon — no failure strike.</summary>
         private static readonly TimeSpan TransientRetry = TimeSpan.FromSeconds(3);
 
-        /// <summary>"song|target" -> last attempt (any outcome), for backoff.</summary>
+        /// <summary>"song|target" -> last genuine failure, for backoff.</summary>
         private readonly Dictionary<string, DateTime> _lastAttempt = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>"song|target" -> last transient failure (NotStarted/Interrupted): short retry, never strikes.</summary>
@@ -226,6 +226,10 @@ namespace CurePlease.Core.Modules
 
         public void AddCandidates(GameSnapshot snapshot, CurePleaseSettings settings, List<ActionCandidate> candidates)
         {
+            // One action executes per engine tick; any contexts left from the previous
+            // collection belonged to candidates that were not selected.
+            _pending.Clear();
+
             BardSettings bard = settings.Bard;
             PlayerState pl = snapshot.Player;
 
@@ -247,7 +251,8 @@ namespace CurePlease.Core.Modules
                 return;
             }
 
-            if (realCount > availability.EffectiveSlots)
+            if (realCount > availability.EffectiveSlots
+                && (!bard.UseClarionCall || realCount > availability.BaseSlots + 1))
             {
                 LogSkip("slots", "Bard: rotation has " + realCount + " songs but " + availability.EffectiveSlots
                     + " slot(s) (instrument: " + availability.InstrumentName + ") — songs past the slot count will keep "
@@ -290,6 +295,12 @@ namespace CurePlease.Core.Modules
             List<ActionCandidate> candidates)
         {
             BardSettings bard = settings.Bard;
+
+            if (bard.UseClarionCall && index >= availability.BaseSlots
+                && !pl.HasBuff(StatusEffect.Clarion_Call))
+            {
+                return; // Never overwrite a real song while the overflow slot is unavailable.
+            }
 
             // Marcato pairing: hold the song until Marcato is up (or known unavailable).
             if (bard.UseMarcato && songName.Equals(bard.MarcatoSong?.Trim(), StringComparison.OrdinalIgnoreCase))
@@ -359,7 +370,8 @@ namespace CurePlease.Core.Modules
                     return;
                 }
 
-                if (pl.HasBuff(StatusEffect.Nightingale) && troubadour == AbilityState.Ready)
+                if ((pl.HasBuff(StatusEffect.Nightingale) || nightingale == AbilityState.Unavailable)
+                    && troubadour == AbilityState.Ready)
                 {
                     candidates.Add(Ja("Troubadour", jaScore));
                     return;
@@ -367,7 +379,7 @@ namespace CurePlease.Core.Modules
 
                 if (nightingale == AbilityState.Unavailable)
                 {
-                    LogSkip("ja|Nightingale", "Bard: Nightingale unavailable (" + JaUnavailableReason("Nightingale") + ") — singing without NiTro");
+                    LogSkip("ja|Nightingale", "Bard: Nightingale unavailable (" + JaUnavailableReason("Nightingale") + ") — continuing with Troubadour alone when available");
                 }
                 else if (nightingale == AbilityState.Active && troubadour == AbilityState.Unavailable)
                 {
@@ -710,18 +722,34 @@ namespace CurePlease.Core.Modules
         }
 
         /// <summary>
-        /// Feeds an addon-confirmed action landing (0x028) into the module. Correlated to
-        /// the last song we executed; recipients are remembered briefly so a party member
-        /// whose buff packet (0x076) lags behind is not immediately re-sung at.
+        /// Feeds an addon-confirmed action landing (0x028) into the module. The spell id
+        /// identifies the current offer even when the addon reports the landing before
+        /// CastingService returns; the last completed song is the fallback for late reports.
         /// </summary>
-        public void OnSpellLanded(IReadOnlyList<string> recipientNames)
+        public void OnSpellLanded(int spellId, IReadOnlyList<string> recipientNames)
         {
-            if (_lastSongFamily == 0 || DateTime.UtcNow - _lastSongCastUtc > TimeSpan.FromSeconds(3))
+            StatusEffect family = 0;
+            foreach (KeyValuePair<ActionCandidate, SongContext> pair in _pending)
             {
-                return;
+                EliteAPI.ISpell spell = _state.FindSpell(pair.Key.ActionName);
+                if (spell != null && spell.Index == spellId)
+                {
+                    family = pair.Value.Family;
+                    break;
+                }
             }
 
-            _landings[_lastSongFamily] = new KeyValuePair<DateTime, HashSet<string>>(
+            if (family == 0)
+            {
+                if (_lastSongFamily == 0 || DateTime.UtcNow - _lastSongCastUtc > TimeSpan.FromSeconds(3))
+                {
+                    return;
+                }
+
+                family = _lastSongFamily;
+            }
+
+            _landings[family] = new KeyValuePair<DateTime, HashSet<string>>(
                 DateTime.UtcNow, new HashSet<string>(recipientNames, StringComparer.OrdinalIgnoreCase));
         }
 
@@ -771,7 +799,8 @@ namespace CurePlease.Core.Modules
                 return;
             }
 
-            _lastAttempt[key] = DateTime.UtcNow;
+            _lastAttempt.Remove(key);
+            _shortRetry.Remove(key);
             _failures.Remove(key);
 
             // Enemy debuff song: timer-based tracking keyed to the target it was cast on.
@@ -853,12 +882,12 @@ namespace CurePlease.Core.Modules
         {
             var real = new List<string>();
 
+            AddValid(real, bard.PartySongs);
             if (bard.UseClarionCall && !string.IsNullOrWhiteSpace(bard.ClarionSong))
             {
                 AddValid(real, bard.ClarionSong);
             }
 
-            AddValid(real, bard.PartySongs);
             realCount = real.Count;
 
             var dummies = new List<string>();

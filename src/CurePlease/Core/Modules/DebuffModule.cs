@@ -7,10 +7,10 @@ using FFXI.Memory;
 namespace CurePlease.Core.Modules
 {
     /// <summary>
-    /// Debuff removal for targets whose buffs are readable from memory: the local
-    /// player and the monitored character. (Full party coverage needs a buff
-    /// provider — addon or future memory reads — which is a P2 item; see
-    /// docs/legacy-assessment.md section 3.)
+    /// Debuff removal for the local and monitored characters from memory, plus
+    /// own-party members from the addon's 0x076 buff reports. Alliance parties
+    /// receive no buff reports from the server; see docs/legacy-assessment.md
+    /// section 3.
     ///
     /// Legacy parity, three removal classes:
     ///  - ailments removable with -na spells (Poisona, Silena, Paralyna, Blindna,
@@ -78,9 +78,11 @@ namespace CurePlease.Core.Modules
             new Removal { Debuff = StatusEffect.Dia,            Spell = "Erase",    Severity = 0.35 },
             new Removal { Debuff = StatusEffect.Attack_Down,    Spell = "Erase",    Severity = 0.33 },
             new Removal { Debuff = StatusEffect.Accuracy_Down,  Spell = "Erase",    Severity = 0.33 },
+            new Removal { Debuff = StatusEffect.Evasion_Down,   Spell = "Erase",    Severity = 0.33 },
             new Removal { Debuff = StatusEffect.Defense_Down,   Spell = "Erase",    Severity = 0.33 },
             new Removal { Debuff = StatusEffect.Magic_Acc_Down, Spell = "Erase",    Severity = 0.33 },
             new Removal { Debuff = StatusEffect.Magic_Atk_Down, Spell = "Erase",    Severity = 0.33 },
+            new Removal { Debuff = StatusEffect.Magic_Def_Down, Spell = "Erase",    Severity = 0.33 },
             new Removal { Debuff = StatusEffect.Burn,           Spell = "Erase",    Severity = 0.30 },
             new Removal { Debuff = StatusEffect.Frost,          Spell = "Erase",    Severity = 0.30 },
             new Removal { Debuff = StatusEffect.Choke,          Spell = "Erase",    Severity = 0.30 },
@@ -176,6 +178,11 @@ namespace CurePlease.Core.Modules
             return list;
         }
 
+        private const float RemovalRange = 21f;
+
+        private static readonly TimeSpan RetryBackoff = TimeSpan.FromSeconds(15);
+        private static readonly TimeSpan TransientRetry = TimeSpan.FromSeconds(3);
+
         private readonly GameStateService _state;
 
         /// <summary>How long after execution before a JA may be offered again.</summary>
@@ -184,6 +191,9 @@ namespace CurePlease.Core.Modules
         /// <summary>JA name -> last execution time (prep verify windows).</summary>
         private readonly Dictionary<string, DateTime> _jaAttempted = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 
+        private readonly Dictionary<string, DateTime> _lastFailure = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, DateTime> _shortRetry = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+
         public DebuffModule(GameStateService state)
         {
             _state = state;
@@ -191,10 +201,12 @@ namespace CurePlease.Core.Modules
 
         public string Name => "Debuffs";
 
-        /// <summary>Zone hygiene: the JA verify window (seconds) never survives a zone anyway.</summary>
+        /// <summary>Zone hygiene: JA verify windows and failed-removal retries never survive a zone.</summary>
         public void OnZoneChanged()
         {
             _jaAttempted.Clear();
+            _lastFailure.Clear();
+            _shortRetry.Clear();
         }
 
         public void AddCandidates(GameSnapshot snapshot, CurePleaseSettings settings, List<ActionCandidate> candidates)
@@ -305,6 +317,29 @@ namespace CurePlease.Core.Modules
             if (candidate.IsJobAbility)
             {
                 _jaAttempted[candidate.ActionName] = DateTime.UtcNow;
+                return;
+            }
+
+            if (candidate.Category != ActionCategory.DebuffRemoval)
+            {
+                return;
+            }
+
+            string key = candidate.ActionName + "|" + candidate.TargetName;
+            if (result.Succeeded)
+            {
+                _lastFailure.Remove(key);
+                _shortRetry.Remove(key);
+            }
+            else if (result.Outcome == CastOutcome.NotStarted || result.Outcome == CastOutcome.Interrupted)
+            {
+                _lastFailure.Remove(key);
+                _shortRetry[key] = DateTime.UtcNow;
+            }
+            else
+            {
+                _shortRetry.Remove(key);
+                _lastFailure[key] = DateTime.UtcNow;
             }
         }
 
@@ -312,6 +347,19 @@ namespace CurePlease.Core.Modules
         {
             return _jaAttempted.TryGetValue(abilityName, out DateTime attempted)
                 && DateTime.UtcNow - attempted < JaVerifyWindow;
+        }
+
+        private bool RemovalOnBackoff(string spellName, string targetName)
+        {
+            string key = spellName + "|" + targetName;
+            if (_lastFailure.TryGetValue(key, out DateTime failed)
+                && DateTime.UtcNow - failed < RetryBackoff)
+            {
+                return true;
+            }
+
+            return _shortRetry.TryGetValue(key, out DateTime retry)
+                && DateTime.UtcNow - retry < TransientRetry;
         }
 
         /// <summary>
@@ -547,6 +595,11 @@ namespace CurePlease.Core.Modules
         {
             PlayerState pl = snapshot.Player;
             bool isSelf = targetName.Equals(pl.Name, StringComparison.OrdinalIgnoreCase);
+            if (!isSelf && !InRemovalRange(snapshot, targetName))
+            {
+                return;
+            }
+
             double priority = isMonitored ? settings.Priorities.MonitoredWeight : 1.0;
 
             // Sleep/Sleep2: woken by any cure landing on the target. Never on the
@@ -558,7 +611,7 @@ namespace CurePlease.Core.Modules
                 && (HasBuff(buffs, StatusEffect.Sleep) || HasBuff(buffs, StatusEffect.Sleep2)))
             {
                 EliteAPI.ISpell wake = SpellBook.IsCastable(_state, settings.Debuffs.WakeSleepSpell, pl.MP);
-                if (wake != null)
+                if (wake != null && !RemovalOnBackoff(wake.Name[0], targetName))
                 {
                     candidates.Add(new ActionCandidate
                     {
@@ -592,7 +645,7 @@ namespace CurePlease.Core.Modules
 
                 // Correct spell gate (legacy bug: Poisona branch checked JobChecker("Erase")).
                 EliteAPI.ISpell spell = SpellBook.IsCastable(_state, removal.Spell, pl.MP);
-                if (spell == null)
+                if (spell == null || RemovalOnBackoff(spell.Name[0], targetName))
                 {
                     continue;
                 }
@@ -617,6 +670,21 @@ namespace CurePlease.Core.Modules
 
                 candidates.Add(candidate);
             }
+        }
+
+        private bool InRemovalRange(GameSnapshot snapshot, string targetName)
+        {
+            foreach (PartyMemberState member in snapshot.PartyMembers)
+            {
+                if (member.Active && member.Name.Equals(targetName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return member.CurrentHP > 0 && member.Zone == snapshot.Player.ZoneId
+                        && _state.GetEntityDistance(member.TargetIndex) <= RemovalRange;
+                }
+            }
+
+            EntityInfo entity = _state.FindEntityByName(targetName);
+            return entity != null && entity.Distance <= RemovalRange;
         }
 
         private static bool HasBuff(short[] buffs, StatusEffect effect)

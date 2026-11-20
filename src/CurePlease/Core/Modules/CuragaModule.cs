@@ -7,8 +7,8 @@ using FFXI.Memory;
 namespace CurePlease.Core.Modules
 {
     /// <summary>
-    /// Party-wide cures. Fires when enough same-zone members are below the Curaga
-    /// threshold, centered on the lowest-HPP member. Scored against single-target
+    /// Party-wide cures. Fires when enough reachable, same-zone, own-party members
+    /// are below the Curaga threshold, centered on the lowest-HPP member. Scored against single-target
     /// cures, so it no longer pre-empts an emergency heal the way the legacy fixed
     /// order did.
     ///
@@ -70,11 +70,14 @@ namespace CurePlease.Core.Modules
                             && m.PartyIndex == 0
                             && m.CurrentHP > 0
                             && m.Zone == pl.ZoneId
-                            && m.CurrentHPP <= settings.Curaga.CurePercentage)
+                            && m.CurrentHPP <= settings.Curaga.CurePercentage
+                            && (m.Name.Equals(pl.Name, StringComparison.OrdinalIgnoreCase)
+                                || _state.GetEntityDistance(m.TargetIndex) <= CuragaRange))
                 .OrderBy(m => m.CurrentHPP)
                 .ToList();
 
-            if (injured.Count < settings.Curaga.RequiredMembers)
+            int requiredMembers = Math.Max(1, settings.Curaga.RequiredMembers);
+            if (injured.Count < requiredMembers)
             {
                 return;
             }
@@ -88,7 +91,7 @@ namespace CurePlease.Core.Modules
             }
 
             double avgUrgency = injured.Average(m => (100.0 - m.CurrentHPP) / 100.0);
-            double coverage = (double)injured.Count / settings.Curaga.RequiredMembers;
+            double coverage = (double)injured.Count / requiredMembers;
             double score = settings.Priorities.CuragaWeight * avgUrgency * Math.Min(coverage, 2.0);
 
             // Accession path (SCH main or sub): Cure I–IV as the party heal. The

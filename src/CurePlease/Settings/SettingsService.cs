@@ -95,6 +95,7 @@ namespace CurePlease.Settings
         /// </summary>
         public bool Save(CurePleaseSettings settings, string path)
         {
+            Migrate(settings);
             settings.Version = CurePleaseSettings.CurrentVersion;
             string temp = path + ".tmp";
 
@@ -157,9 +158,9 @@ namespace CurePlease.Settings
         }
 
         /// <summary>
-        /// Migration pipeline. Unknown fields are ignored by the deserializer and new
-        /// fields keep their defaults, so migrations only run when the shape changes
-        /// in ways defaults cannot cover.
+        /// Migration and validation pipeline. Unknown fields are ignored by the
+        /// deserializer and new fields keep their defaults; invalid numeric limits are
+        /// clamped before the settings become live.
         /// </summary>
         private static void Migrate(CurePleaseSettings settings)
         {
@@ -171,6 +172,7 @@ namespace CurePlease.Settings
             // JSON load replaces Entries wholesale; re-add catalog spells introduced
             // after the profile was written.
             settings.Buffs.EnsureSeeded();
+            settings.Curaga.RequiredMembers = Math.Max(1, settings.Curaga.RequiredMembers);
 
             // Future: if (settings.Version < 2) { ... settings.Version = 2; }
         }

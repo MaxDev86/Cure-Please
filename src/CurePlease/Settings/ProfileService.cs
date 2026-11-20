@@ -236,8 +236,7 @@ namespace CurePlease.Settings
                 return false;
             }
 
-            SwitchTo(candidate);
-            return true;
+            return SwitchTo(candidate);
         }
 
         /// <summary>Character-specific file first, then the job-combo file; null when neither exists.</summary>
@@ -254,7 +253,7 @@ namespace CurePlease.Settings
             return combo != null && File.Exists(PathFor(combo)) ? combo : null;
         }
 
-        /// <summary>Loads a profile by name and makes it the active one. False when the file does not exist.
+        /// <summary>Loads a profile by name and makes it the active one. False when the file is missing or cannot be loaded.
         /// A manual switch sticks until the job context actually changes — ConsiderSnapshot
         /// will not immediately override it for the current context.</summary>
         public bool SwitchTo(string name)
@@ -265,7 +264,13 @@ namespace CurePlease.Settings
                 return false;
             }
 
-            _settings.Load(path);
+            CurePleaseSettings previous = _settings.Current;
+            CurePleaseSettings loaded = _settings.Load(path);
+            if (ReferenceEquals(previous, loaded))
+            {
+                return false;
+            }
+
             ActiveName = name;
             ProfileSwitched?.Invoke(name);
             return true;

@@ -216,11 +216,17 @@ namespace CurePlease.Core
                 return null;
             }
 
-            if (ProcessGone(_plProcessId) || (_monitoredProcessId != 0 && ProcessGone(_monitoredProcessId)))
+            if (ProcessGone(_plProcessId))
             {
                 LastError = "Game process exited";
                 SetState(ConnectionState.Lost);
                 return null;
+            }
+
+            if (_monitoredProcessId != 0 && ProcessGone(_monitoredProcessId))
+            {
+                Serilog.Log.Information("Monitored game process {ProcessId} exited; continuing without it", _monitoredProcessId);
+                DetachMonitored();
             }
 
             try

@@ -215,13 +215,14 @@ namespace CurePlease
             }
         }
 
-        private void OnAddonSpellLanded(int spellId, string[] recipients)
+        private void OnAddonSpellLanded(string caster, int spellId, string[] recipients)
         {
-            // No caster on this message — broadcast; each bard module only reacts to
-            // songs it believes it cast itself.
             foreach (InstanceView view in SnapshotViews())
             {
-                view.HandleSpellLanded(spellId, recipients);
+                if (caster == null || caster.Equals(view.CharacterName, StringComparison.OrdinalIgnoreCase))
+                {
+                    view.HandleSpellLanded(spellId, recipients);
+                }
             }
         }
 

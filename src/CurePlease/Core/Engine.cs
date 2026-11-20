@@ -353,11 +353,10 @@ namespace CurePlease.Core
             CurePleaseSettings settings = _settings.Current;
             AuditCapabilities(snapshot.Player, settings);
 
-            // Merge addon-provided party buffs (with staleness + roster pruning).
+            // Merge only this instance's addon-provided party buffs. The listener is
+            // shared, so pruning its table with one tab's roster would erase other tabs.
             if (Addon != null && Addon.IsRunning && settings.Addon.Enabled)
             {
-                snapshot.PartyBuffs = Addon.GetBuffSnapshot(TimeSpan.FromSeconds(settings.Addon.StaleSeconds));
-
                 List<string> roster = new List<string>();
                 foreach (PartyMemberState member in snapshot.PartyMembers)
                 {
@@ -368,7 +367,8 @@ namespace CurePlease.Core
                 }
 
                 roster.Add(snapshot.Player.Name);
-                Addon.PruneRoster(roster);
+                snapshot.PartyBuffs = Addon.GetBuffSnapshot(
+                    TimeSpan.FromSeconds(settings.Addon.StaleSeconds), roster);
             }
 
             bool paused = settings.General.PauseActions || _pausedByZone;

@@ -9,6 +9,36 @@ this file carries the narrative. See TODO.md for what is planned but not done.
 Full rewrite of legacy CurePlease 2.0.4.4 (WinForms/.NET 4.8) as a WPF app on
 .NET 10, driven by FFXI.Memory.
 
+### Priority fixes (uncommitted)
+- BRD NiTro now continues with Troubadour alone when Nightingale is unavailable.
+- Debuff removal skips out-of-range targets and backs off failed casts instead of
+  repeatedly winning the action queue.
+- A monitored client exiting now detaches monitoring without stopping the PL engine.
+- Corrupt/unreadable profiles no longer activate or report a successful switch.
+- Legacy import honors singing/debuff master switches and no longer restores
+  default removals when the legacy configuration had none selected.
+- BRD landing reports are caster-keyed and spell-id correlated even when they
+  arrive before cast feedback; unselected song contexts no longer accumulate.
+- Curaga counts only reachable own-party members; alliance injuries no longer
+  trigger party-only Majesty; Clarion overflow songs wait for their extra slot.
+- GEO Entrust works without a luopan, and GEO spells check their MP cost.
+- Session-buff assignments are thread-safe and replace sibling tiers; failed
+  settings saves restore prior live state; Curaga member count is clamped.
+- Native follow stops/resets cleanly and closed tabs stop their preview timers.
+
+### GEO/BRD fixes (uncommitted)
+- Restored legacy `GeoWhenEngaged` as the optional luopan engagement gate, including
+  settings UI and legacy import; successful GEO/BRD casts no longer incur the 15-second
+  failure retry backoff.
+
+### Party debuff parity (uncommitted)
+- DebuffModule scans the PL, monitored character, and addon-reported own-party
+  buffs every tick; Evasion Down and Magic Defense Down now map to Erase.
+- Empty addon buff reports clear prior state; stale entries expire, and per-tab
+  roster filtering no longer prunes other instances' party data.
+- Legacy import includes Magic Defense Down in the Erase group and honors the
+  legacy addon enable switch.
+
 ### Review hardening (uncommitted)
 - Window close now uses cancel-then-close: tab shutdown (engine stop, addon unload,
   PID release) always completes before the process exits.

@@ -123,7 +123,11 @@ namespace CurePlease.Core.Modules
                 double urgency = (100.0 - member.CurrentHPP) / 100.0;
                 double score = settings.Priorities.CureWeight * urgency * priority;
 
-                cureCandidates++;
+                if (member.PartyIndex == 0)
+                {
+                    cureCandidates++; // Majesty's AoE cannot reach alliance parties.
+                }
+
                 if (score > bestCureScore)
                 {
                     bestCureScore = score;

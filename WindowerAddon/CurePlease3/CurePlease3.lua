@@ -6,7 +6,7 @@ _addon.commands = {'cp3'}
 
 -- Protocol v2 (UDP, default 127.0.0.1:19771):
 --   CUREPLEASE_buffs_<Name>_<id1,id2,...>            own-party buff dump (from 0x076)
---   CUREPLEASE_action_<spellId>_<name1,name2,...>    per-target landing report (who a cast hit)
+--   CUREPLEASE_action2_<CharName>_<spellId>_<names>  caster-keyed landing report (who a cast hit)
 --   CUREPLEASE_casting2_<CharName>_finished          cast outcome, name-keyed (multi-instance safe)
 --   CUREPLEASE_casting2_<CharName>_interrupted
 --   CUREPLEASE_casting2_<CharName>_blocked
@@ -150,7 +150,7 @@ windower.register_event('action', function(data)
                 end
             end
             if #names > 0 then
-                send('CUREPLEASE_action_' .. tostring(data.param) .. '_' .. table.concat(names, ','))
+                send('CUREPLEASE_action2_' .. player_name() .. '_' .. tostring(data.param) .. '_' .. table.concat(names, ','))
             end
         end
     elseif data.category == 8 then

@@ -35,6 +35,7 @@ namespace CurePlease
         /// <summary>Open Buffs popups by member name — one per member.</summary>
         private readonly Dictionary<string, PlayerBuffsPopup> _buffPopups = new Dictionary<string, PlayerBuffsPopup>(StringComparer.OrdinalIgnoreCase);
         private string _lastPlayerName = "";
+        private readonly System.Windows.Threading.DispatcherTimer _previewTimer;
         private PlayerJobsWindow _jobsWindow;
         private bool _profileComboGuard;
         private bool _addonLoadPending;
@@ -222,11 +223,11 @@ namespace CurePlease
             // Display polling when the engine is not running: keeps status/party view
             // live after Attach without requiring Start. The engine owns snapshots
             // once started, so this timer skips those periods to avoid double reads.
-            System.Windows.Threading.DispatcherTimer previewTimer = new System.Windows.Threading.DispatcherTimer
+            _previewTimer = new System.Windows.Threading.DispatcherTimer
             {
                 Interval = TimeSpan.FromMilliseconds(500),
             };
-            previewTimer.Tick += (s, e) =>
+            _previewTimer.Tick += (s, e) =>
             {
                 if (!_engine.IsRunning && _state.IsAttached)
                 {
@@ -239,7 +240,7 @@ namespace CurePlease
                     UpdateSnapshot(snapshot);
                 }
             };
-            previewTimer.Start();
+            _previewTimer.Start();
 
             RefreshProcessLists();
         }
@@ -255,7 +256,7 @@ namespace CurePlease
         /// <summary>Spell-landed report routed from the shared addon listener (bard song tracking).</summary>
         public void HandleSpellLanded(int spellId, string[] recipients)
         {
-            _bard.OnSpellLanded(recipients);
+            _bard.OnSpellLanded(spellId, recipients);
         }
 
         /// <summary>Thread-safe log line from the shell (addon events arrive on the UDP thread).</summary>
@@ -272,6 +273,7 @@ namespace CurePlease
         {
             try
             {
+                _previewTimer.Stop();
                 await _engine.StopAsync();
 
                 // Closing detaches, and detaching unloads the addon from the client.
@@ -462,13 +464,12 @@ namespace CurePlease
                 }
 
                 // Persist immediately — an import that only lives in memory is lost on exit.
-                if (!_profiles.SaveActive())
-                {
-                    _profiles.SaveAs(ProfileService.DefaultProfileName);
-                }
+                bool saved = _profiles.SaveActive() || _profiles.SaveAs(ProfileService.DefaultProfileName);
 
                 UpdateActiveProfileLabel();
-                AppendLog("Saved to " + _profiles.ActivePath);
+                AppendLog(saved
+                    ? "Saved to " + _profiles.ActivePath
+                    : "WARNING: import is active in memory but could not be written to a profile");
             }
             catch (Exception ex)
             {
@@ -734,7 +735,11 @@ namespace CurePlease
             }
 
             // SwitchTo fires ProfileSwitched, which refreshes the combo and logs.
-            _profiles.SwitchTo(name);
+            if (!_profiles.SwitchTo(name))
+            {
+                AppendLog("Profile load failed: " + name + " — keeping the current settings");
+                UpdateActiveProfileLabel();
+            }
         }
 
         /// <summary>"Charname_MAIN_SUB" from the last snapshot, for the settings window's Save As prompt.</summary>

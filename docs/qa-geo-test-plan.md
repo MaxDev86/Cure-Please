@@ -116,7 +116,7 @@ right situations.
 
 ## Test 7 — Engagement rules
 
-1. Turn on "only (re)cast while engaged". Stand around with no monster claimed.
+1. Turn on "Only place the luopan while engaged". Stand around with no monster claimed.
    **You should see:** the offensive bubble is NOT placed while idle.
 2. Claim a monster whose name is NOT in your engaged-enemy list.
    **You should see:** the bubble is not placed on it.

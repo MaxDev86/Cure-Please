@@ -29,6 +29,8 @@
                        TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,6"/>
             <CheckBox Content="Place and manage a luopan"
                       IsChecked="{Binding LuopanEnabled, UpdateSourceTrigger=PropertyChanged}"/>
+            <CheckBox Content="Only place the luopan while engaged"
+                      IsChecked="{Binding LuopanOnlyWhenEngaged, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0"/>
             <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                 <TextBlock Text="Geo spell:" VerticalAlignment="Center" Width="170"/>
                 <ComboBox SelectedItem="{Binding GeoSpell, UpdateSourceTrigger=PropertyChanged}"

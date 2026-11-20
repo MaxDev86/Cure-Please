@@ -88,7 +88,8 @@ casting by name or `<t>` needs no target-lock round-trips.
    short-lived.
 2. Indi upkeep: buff 612 missing -> cast `IndiSpell` on `<me>` (gated by
    engagement when `IndiOnlyWhenEngaged`).
-3. Luopan drop: no luopan and engaged ->
+3. Luopan drop: no luopan, gated by engagement only when
+   `LuopanOnlyWhenEngaged` is enabled (legacy `GeoWhenEngaged`; off by default) ->
    a. `UseBlazeOfGlory`: offer the JA, then HOLD the Geo-* cast until
       buff 569 is actually visible (bard JA-verify pattern; 10 s window,
       then cast without it). Legacy fired blind.
@@ -106,16 +107,16 @@ casting by name or `<t>` needs no target-lock round-trips.
 ## Settings (GeoSettings)
 
 Names, not legacy combo indices. `Enabled` requires main or sub job GEO
-(21). `IndiSpell`, `IndiOnlyWhenEngaged`, `LuopanEnabled`, `GeoSpell`,
-`LuopanTarget`, `EngagedTargetName`, `UseBlazeOfGlory`,
+(21). `IndiSpell`, `IndiOnlyWhenEngaged`, `LuopanEnabled`,
+`LuopanOnlyWhenEngaged`, `GeoSpell`, `LuopanTarget`, `EngagedTargetName`, `UseBlazeOfGlory`,
 `UseEclipticAttrition`, `UseDematerialize`, `UseLifeCycle`,
 `UseFullCircle`, `UseEntrust`, `EntrustSpell`, `EntrustTarget`,
 `UseRadialArcana`, `RadialArcanaMpBelow`. Priority weight:
 `Priorities.GeoWeight` (default 24 — below songs, above buff upkeep;
 prep JAs score +10 over it).
 
-Legacy import maps `IndiSpell_Spell` / `GeoSpell_Spell` /
-`EntrustedSpell_Spell` indices through the legacy GeomancerInfo table
+Legacy import maps `GeoWhenEngaged` to `LuopanOnlyWhenEngaged`, and maps
+`IndiSpell_Spell` / `GeoSpell_Spell` / `EntrustedSpell_Spell` indices through the legacy GeomancerInfo table
 (the fixed 30-entry Indi/Geo pair list in Form1.cs) into names, and the
 dual-purpose `LuopanSpell_Target` into `LuopanTarget` plus
 `EngagedTargetName` when `specifiedEngageTarget` was set.

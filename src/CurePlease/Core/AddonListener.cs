@@ -29,7 +29,9 @@ namespace CurePlease.Core
     ///                                                     v2 cast outcome events, name-keyed so
     ///                                                     multiple game instances don't cross-talk
     ///   CUREPLEASE_casting_finished|interrupted|blocked   legacy cast events (sender null)
-    ///   CUREPLEASE_action_&lt;spellId&gt;_&lt;name1,...&gt;       per-target landing report (0x028)
+    ///   CUREPLEASE_action2_&lt;CharName&gt;_&lt;spellId&gt;_&lt;name1,...&gt;
+    ///                                                     caster-keyed landing report (0x028)
+    ///   CUREPLEASE_action_&lt;spellId&gt;_&lt;name1,...&gt;       legacy anonymous landing report
     ///   CUREPLEASE_command_&lt;cmd&gt;                       (ignored; bot-side commands not needed)
     /// </summary>
     public sealed class AddonListener : IDisposable
@@ -64,10 +66,10 @@ namespace CurePlease.Core
         public event Action<string, CastEventKind> CastEvent;
 
         /// <summary>
-        /// Fires when the addon reports a finished action's landing (0x028): the spell
-        /// id and the display names of every entity it landed on.
+        /// Fires when the addon reports a finished action's landing (0x028): caster name
+        /// (null for the legacy anonymous format), spell id, and recipient display names.
         /// </summary>
-        public event Action<int, string[]> SpellLanded;
+        public event Action<string, int, string[]> SpellLanded;
 
         /// <summary>Fires when the addon answers a //cp3 verify handshake. Argument is the character name (v2) or null (legacy).</summary>
         public event Action<string> Handshake;
@@ -139,35 +141,33 @@ namespace CurePlease.Core
 
         /// <summary>
         /// Returns a copy of the current buff table, excluding entries older than
-        /// <paramref name="staleAfter"/>. Keyed by character name (ordinal-ignore-case).
+        /// <paramref name="staleAfter"/> and, when supplied, names outside
+        /// <paramref name="activeNames"/>. Keyed by character name (ordinal-ignore-case).
+        /// Stale entries are removed from the shared table without pruning other
+        /// instances' live rosters.
         /// </summary>
-        public Dictionary<string, short[]> GetBuffSnapshot(TimeSpan staleAfter)
+        public Dictionary<string, short[]> GetBuffSnapshot(
+            TimeSpan staleAfter, IReadOnlyCollection<string> activeNames = null)
         {
             Dictionary<string, short[]> result = new Dictionary<string, short[]>(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> active = activeNames == null
+                ? null
+                : new HashSet<string>(activeNames, StringComparer.OrdinalIgnoreCase);
             DateTime cutoff = DateTime.UtcNow - staleAfter;
 
             foreach (KeyValuePair<string, BuffEntry> pair in _buffs)
             {
-                if (pair.Value.LastSeenUtc >= cutoff)
+                if (pair.Value.LastSeenUtc < cutoff)
+                {
+                    _buffs.TryRemove(pair.Key, out _);
+                }
+                else if (active == null || active.Contains(pair.Key))
                 {
                     result[pair.Key] = pair.Value.Buffs;
                 }
             }
 
             return result;
-        }
-
-        /// <summary>Drops buff entries for anyone not in the given roster (left party, zoned out).</summary>
-        public void PruneRoster(IReadOnlyCollection<string> activeNames)
-        {
-            HashSet<string> active = new HashSet<string>(activeNames, StringComparer.OrdinalIgnoreCase);
-            foreach (string name in _buffs.Keys)
-            {
-                if (!active.Contains(name))
-                {
-                    _buffs.TryRemove(name, out _);
-                }
-            }
         }
 
         private async Task ReceiveLoop(CancellationToken ct)
@@ -232,9 +232,9 @@ namespace CurePlease.Core
                 return;
             }
 
-            if (TryParseActionMessage(message, out int spellId, out string[] recipients))
+            if (TryParseActionMessage(message, out string actor, out int spellId, out string[] recipients))
             {
-                SpellLanded?.Invoke(spellId, recipients);
+                SpellLanded?.Invoke(actor, spellId, recipients);
                 return;
             }
 
@@ -327,33 +327,58 @@ namespace CurePlease.Core
         }
 
         /// <summary>
-        /// Parses CUREPLEASE_action_&lt;spellId&gt;_&lt;name1,name2,...&gt;. Public and static so the
-        /// format can be verified without a live socket.
+        /// Parses caster-keyed CUREPLEASE_action2_&lt;CharName&gt;_&lt;spellId&gt;_&lt;names&gt; and
+        /// legacy anonymous CUREPLEASE_action_&lt;spellId&gt;_&lt;names&gt; landing reports.
         /// </summary>
-        public static bool TryParseActionMessage(string message, out int spellId, out string[] recipients)
+        public static bool TryParseActionMessage(string message, out string caster, out int spellId, out string[] recipients)
         {
+            caster = null;
             spellId = 0;
             recipients = null;
-
-            const string prefix = "CUREPLEASE_action_";
-            if (message == null || !message.StartsWith(prefix, StringComparison.Ordinal))
+            if (message == null)
             {
                 return false;
             }
 
-            int separator = message.IndexOf('_', prefix.Length);
-            if (separator <= prefix.Length || separator == message.Length - 1)
+            const string keyedPrefix = "CUREPLEASE_action2_";
+            int spellStart;
+            if (message.StartsWith(keyedPrefix, StringComparison.Ordinal))
             {
-                return false;
+                int casterEnd = message.IndexOf('_', keyedPrefix.Length);
+                if (casterEnd <= keyedPrefix.Length)
+                {
+                    return false;
+                }
+
+                caster = message.Substring(keyedPrefix.Length, casterEnd - keyedPrefix.Length);
+                spellStart = casterEnd + 1;
+            }
+            else
+            {
+                const string legacyPrefix = "CUREPLEASE_action_";
+                if (!message.StartsWith(legacyPrefix, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                spellStart = legacyPrefix.Length;
             }
 
-            if (!int.TryParse(message.Substring(prefix.Length, separator - prefix.Length), out spellId))
+            int separator = message.IndexOf('_', spellStart);
+            if (separator <= spellStart || separator == message.Length - 1
+                || !int.TryParse(message.Substring(spellStart, separator - spellStart), out spellId))
             {
                 return false;
             }
 
             recipients = message.Substring(separator + 1).Split(',');
             return recipients.Length > 0;
+        }
+
+        /// <summary>Legacy parser signature for callers that do not need the caster.</summary>
+        public static bool TryParseActionMessage(string message, out int spellId, out string[] recipients)
+        {
+            return TryParseActionMessage(message, out _, out spellId, out recipients);
         }
 
         /// <summary>
@@ -372,13 +397,18 @@ namespace CurePlease.Core
             }
 
             int separator = message.IndexOf('_', prefix.Length);
-            if (separator <= prefix.Length || separator == message.Length - 1)
+            if (separator <= prefix.Length)
             {
                 return false;
             }
 
             name = message.Substring(prefix.Length, separator - prefix.Length);
             string list = message.Substring(separator + 1);
+            if (list.Length == 0)
+            {
+                buffs = Array.Empty<short>();
+                return true;
+            }
 
             string[] parts = list.Split(',');
             List<short> parsed = new List<short>(parts.Length);

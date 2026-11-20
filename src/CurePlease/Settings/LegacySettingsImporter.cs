@@ -165,17 +165,17 @@ namespace CurePlease.Settings
                     "Slow", "Addle", "Bind", "Weight", "Bio", "Dia", "Flash", "Helix",
                     "Burn", "Frost", "Choke", "Rasp", "Shock", "Drown",
                     "Attack_Down", "Accuracy_Down", "Defense_Down", "Evasion_Down",
-                    "Magic_Acc_Down", "Magic_Atk_Down",
+                    "Magic_Acc_Down", "Magic_Atk_Down", "Magic_Def_Down",
                     "Max_HP_Down", "Max_MP_Down", "Max_TP_Down",
                     "STR_Down", "DEX_Down", "VIT_Down", "AGI_Down", "INT_Down", "MND_Down", "CHR_Down",
                     "Requiem", "Elegy", "Threnody",
                 });
             }
 
-            if (removals.Count > 0)
-            {
-                settings.Debuffs.EnabledRemovals = removals.ToList();
-            }
+            settings.Debuffs.EnabledRemovals = removals.ToList();
+            settings.Debuffs.Enabled = GetBool(values, "plDebuffEnabled", ref mapped)
+                || GetBool(values, "monitoredDebuffEnabled", ref mapped)
+                || GetBool(values, "enablePartyDebuffRemoval", ref mapped);
 
             // Amnesia was Esuna-removable once; SE removed that. Flag stale configs.
             int amnesiaIgnored = 0;
@@ -264,7 +264,7 @@ namespace CurePlease.Settings
                 settings.Bard.BaseDurationSeconds = recastSongMinutes * 60;
             }
 
-            settings.Bard.Enabled = settings.Bard.PartySongs.Count > 0;
+            settings.Bard.Enabled = GetBool(values, "enableSinging", ref mapped);
 
             // --- Geomancer (legacy *_Spell ints are indices into the fixed GeomancerInfo pair table) ---
             GeoSettings geo = settings.Geo;
@@ -275,6 +275,7 @@ namespace CurePlease.Settings
             }
 
             geo.LuopanEnabled = GetBool(values, "EnableLuopanSpells", ref mapped);
+            geo.LuopanOnlyWhenEngaged = GetBool(values, "GeoWhenEngaged", ref mapped);
 
             if (indiEnabled)
             {
@@ -412,9 +413,13 @@ namespace CurePlease.Settings
                 result.Warnings.Add("PrioritiseOverLowerTier: obsolete — debuff removal now competes by severity score.");
             }
 
-            if (GetBool(values, "EnableAddOn", ref mapped))
+            if (values.ContainsKey("EnableAddOn"))
             {
-                result.Warnings.Add("EnableAddOn: addon-based party debuff tracking is not ported yet (P2).");
+                settings.Addon.Enabled = GetBool(values, "EnableAddOn", ref mapped);
+                if (settings.Addon.Enabled)
+                {
+                    result.Warnings.Add("EnableAddOn: party debuff tracking uses the CurePlease3 addon and covers the current party, not alliance parties.");
+                }
             }
 
             result.Warnings.Add("Buff entries were mapped with their tiers/intervals but left DISABLED — legacy per-slot buff checkboxes were not persisted, so enable the rows you want on the Buff Upkeep page. Per-member buff selections, JA toggles, and item settings are not mapped yet.");

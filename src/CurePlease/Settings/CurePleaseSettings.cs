@@ -68,8 +68,8 @@ namespace CurePlease.Settings
         /// <summary>
         /// Use the game's own /follow command instead of memory-driven movement
         /// (legacy FFXIDefaultAutoFollow). Fallback for if the memory write ever
-        /// breaks on a client update; once engaged, native follow ignores the
-        /// distance band and stays on until the target changes or you move.
+        /// breaks on a client update; stopping clears follow and resets the command
+        /// sequence so it can resume when the target moves away.
         /// </summary>
         public bool FollowUseNative { get; set; }
     }
@@ -422,6 +422,9 @@ namespace CurePlease.Settings
 
         /// <summary>Master switch for luopan placement and management.</summary>
         public bool LuopanEnabled { get; set; }
+
+        /// <summary>Only place a luopan while engaged (legacy GeoWhenEngaged). Off by default for legacy parity.</summary>
+        public bool LuopanOnlyWhenEngaged { get; set; }
 
         /// <summary>Geocolure spell to place (e.g. "Geo-Frailty"). Empty = no luopan.</summary>
         public string GeoSpell { get; set; } = string.Empty;

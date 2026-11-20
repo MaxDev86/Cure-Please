@@ -197,11 +197,14 @@ Implemented in `src/CurePlease/Core/Modules/BardModule.cs` (v2, headless-tested
 - [x] Incapacitation gates (engine level): sleep/petrify/stun/charm/terror
       block everything; silence/mute/Omerta block spells (items exempt);
       amnesia/impairment block job abilities.
-- [x] Addon action landings (0x028): the Windower addon reports per-target
-      recipients (`CUREPLEASE_action_<spellId>_<names>`); a confirmed landing
-      on a member suppresses "member missing song" re-sings for 15 s while
-      the 0x076 buff packet lags. Ashita addon does not send this yet (raw
-      packet parsing; landing data degrades gracefully).
+- [x] Addon action landings (0x028): the Windower addon reports caster and
+      per-target recipients (`CUREPLEASE_action2_<caster>_<spellId>_<names>`),
+      routed only to that caster's instance. Spell-id correlation works whether
+      the landing arrives before or after cast feedback; a confirmed landing on
+      a member suppresses "member missing song" re-sings for 15 s while the
+      0x076 buff packet lags. Legacy anonymous action messages remain accepted.
+      Ashita addon does not send landing reports (raw packet parsing; landing
+      data degrades gracefully).
 - [x] Pianissimo per-target song lists: multiple `PianissimoTargets` entries
       may share one target name; each song is tracked independently.
 

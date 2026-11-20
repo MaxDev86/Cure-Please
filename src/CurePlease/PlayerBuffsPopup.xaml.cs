@@ -28,6 +28,19 @@ namespace CurePlease
             Title = "Buffs — " + memberName;
             HeaderText.Text = memberName;
 
+            _assignments.Changed += OnAssignmentsChanged;
+            Closed += (s, e) => _assignments.Changed -= OnAssignmentsChanged;
+            BuildList();
+        }
+
+        private void OnAssignmentsChanged()
+        {
+            if (!IsLoaded)
+            {
+                return;
+            }
+
+            BuffList.Items.Clear();
             BuildList();
         }
 

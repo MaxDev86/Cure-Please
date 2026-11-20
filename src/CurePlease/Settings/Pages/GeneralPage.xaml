@@ -50,7 +50,7 @@
         <CheckBox Content="Use the game's native /follow instead of memory-driven movement"
                   IsChecked="{Binding General.FollowUseNative, UpdateSourceTrigger=PropertyChanged}"
                   Margin="0,4,0,0"
-                  ToolTip="Fallback if the memory write breaks on a client update. Native follow ignores the distance band once engaged and stays on until the target is lost or you move."/>
+                  ToolTip="Fallback if the memory write breaks on a client update. Stopping or pausing clears native follow; it resumes when the target moves away."/>
 
     </StackPanel>
 </UserControl>

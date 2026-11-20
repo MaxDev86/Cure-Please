@@ -55,7 +55,8 @@ Shared by design (keep one):
 
 - `AddonListener` — buff messages are name-keyed
   (`CUREPLEASE_buffs_<Name>_...`), so one UDP listener can feed every tab's
-  `PartyBuffs`. Each engine already prunes by its own roster.
+  `PartyBuffs`. Each engine filters its snapshot to its own roster; only stale
+  entries are removed from the shared table, never another tab's live roster.
 - `GameProcessLocator` — pure enumeration.
 - Serilog — add a per-tab property (character name) so the file log
   distinguishes instances: `{Message}` → `[{Character}] {Message}`.

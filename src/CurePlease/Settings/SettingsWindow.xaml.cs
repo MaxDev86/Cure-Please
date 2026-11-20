@@ -203,12 +203,14 @@ namespace CurePlease.Settings
         {
             CommitEdits();
 
-            // Publish first so the profile file receives the edited clone, not the old settings.
-            _settings.Adopt(_clone);
+            // Publish a copy for the profile write; restore the prior state if it fails.
+            CurePleaseSettings previous = _settings.Current;
+            _settings.Adopt(_clone.DeepClone());
 
             // No profile file yet (e.g. fresh install before attach): save as default.
             if (!_profiles.SaveActive() && !_profiles.SaveAs(ProfileService.DefaultProfileName))
             {
+                _settings.Adopt(previous);
                 StatusText.Text = "Save failed — see logs (file locked or not writable?)";
                 return;
             }
@@ -268,9 +270,11 @@ namespace CurePlease.Settings
 
             // Publish a COPY: the window keeps editing _clone, so the live settings
             // must not be the same object (bindings would mutate it mid-edit).
+            CurePleaseSettings previous = _settings.Current;
             _settings.Adopt(_clone.DeepClone());
             if (!_profiles.SaveAs(name))
             {
+                _settings.Adopt(previous);
                 StatusText.Text = "Save As failed — see logs (file locked or not writable?)";
                 return;
             }

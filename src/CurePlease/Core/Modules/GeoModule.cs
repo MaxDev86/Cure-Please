@@ -26,8 +26,9 @@ namespace CurePlease.Core.Modules
     ///    Attrition (pet >= 90%, buff 516 absent), Dematerialize (pet >= 90%), Full
     ///    Circle (pet >= 10 yalms from the fight anchor — off-position), Radial Arcana
     ///    (MP valve, pet within 9 yalms).
-    ///  - Engagement gate: a named entity (EngagedTargetName) when set, else the
-    ///    monitored character's status, else the local player's.
+    ///  - Optional engagement gate (LuopanOnlyWhenEngaged / legacy GeoWhenEngaged):
+    ///    a named entity (EngagedTargetName) when set, else the monitored character's
+    ///    status, else the local player's.
     ///  - Enmity assist (offensive luopons only): the luopon's debuff only lands on
     ///    enemies the GEO has hate with. The named player's target identifies the
     ///    enemy; the assist (beneficial spell on that player, or a spell on the
@@ -77,7 +78,7 @@ namespace CurePlease.Core.Modules
 
         private readonly GameStateService _state;
 
-        /// <summary>"spell|target" -> last attempt (any outcome), for backoff.</summary>
+        /// <summary>"spell|target" -> last genuine failure, for backoff.</summary>
         private readonly Dictionary<string, DateTime> _lastAttempt = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>"spell|target" -> last transient failure (NotStarted/Interrupted): short retry, never strikes.</summary>
@@ -202,7 +203,7 @@ namespace CurePlease.Core.Modules
                     ? geo.EntrustTarget.Trim()
                     : !string.IsNullOrEmpty(snapshot.MonitoredName) ? snapshot.MonitoredName : "<me>";
 
-                OfferSpell(geo.EntrustSpell.Trim(), target, score + 5, "entrusted indi", candidates);
+                OfferSpell(geo.EntrustSpell.Trim(), target, score + 5, pl.MP, "entrusted indi", candidates);
                 return;
             }
 
@@ -210,7 +211,13 @@ namespace CurePlease.Core.Modules
             if (!string.IsNullOrWhiteSpace(geo.IndiSpell) && !pl.HasBuff(StatusEffect.Colure_Active)
                 && (!geo.IndiOnlyWhenEngaged || engaged))
             {
-                OfferSpell(geo.IndiSpell.Trim(), "<me>", score, "indi upkeep", candidates);
+                OfferSpell(geo.IndiSpell.Trim(), "<me>", score, pl.MP, "indi upkeep", candidates);
+            }
+
+            if (geo.UseEntrust && !string.IsNullOrWhiteSpace(geo.EntrustSpell)
+                && !pl.HasBuff(StatusEffect.Entrust) && (engaged || !geo.LuopanOnlyWhenEngaged))
+            {
+                OfferJa(pl, "Entrust", score + 10, candidates);
             }
 
             if (!geo.LuopanEnabled || string.IsNullOrWhiteSpace(geo.GeoSpell))
@@ -226,7 +233,7 @@ namespace CurePlease.Core.Modules
             }
 
             // 4. Luopan placement.
-            if (!luopanUp && engaged)
+            if (!luopanUp && (engaged || !geo.LuopanOnlyWhenEngaged))
             {
                 if (geo.UseBlazeOfGlory)
                 {
@@ -245,7 +252,7 @@ namespace CurePlease.Core.Modules
 
                 if (TryResolveLuopanTarget(snapshot, geo, out string targetName, out string reason))
                 {
-                    OfferSpell(geo.GeoSpell.Trim(), targetName, score, "luopan", candidates);
+                    OfferSpell(geo.GeoSpell.Trim(), targetName, score, snapshot.Player.MP, "luopan", candidates);
                 }
                 else
                 {
@@ -292,15 +299,6 @@ namespace CurePlease.Core.Modules
             if (engaged && geo.UseDematerialize && petHp >= 90)
             {
                 OfferJa(pl, "Dematerialize", score + 10, candidates);
-            }
-
-            // Entrust is offered while the luopan is up so the entrusted Indi does not
-            // compete with the drop sequence (Entrust's target gets a single-target
-            // Indi; the self-aura upkeep above continues independently).
-            if (engaged && geo.UseEntrust && !string.IsNullOrWhiteSpace(geo.EntrustSpell)
-                && !pl.HasBuff(StatusEffect.Entrust))
-            {
-                OfferJa(pl, "Entrust", score + 10, candidates);
             }
 
             // Off-position luopan: reclaim with Full Circle so the placement logic
@@ -531,7 +529,7 @@ namespace CurePlease.Core.Modules
                 _lastAttempt.Remove(spellName + "|" + target);
             }
 
-            if (!OfferSpell(spellName, target, score + 6, "enmity assist", candidates))
+            if (!OfferSpell(spellName, target, score + 6, snapshot.Player.MP, "enmity assist", candidates))
             {
                 return false; // backoff/disabled — let the bubble proceed without it
             }
@@ -542,7 +540,7 @@ namespace CurePlease.Core.Modules
         }
 
         /// <summary>Offers a spell candidate when it is castable, offered at most per backoff rules.</summary>
-        private bool OfferSpell(string spellName, string targetName, double score, string what, List<ActionCandidate> candidates)
+        private bool OfferSpell(string spellName, string targetName, double score, uint availableMp, string what, List<ActionCandidate> candidates)
         {
             string key = spellName + "|" + targetName;
             if (OnBackoff(key) || IsDisabled(key))
@@ -550,7 +548,7 @@ namespace CurePlease.Core.Modules
                 return false;
             }
 
-            if (!IsCastable(spellName, out string reason))
+            if (!IsCastable(spellName, availableMp, out string reason))
             {
                 LogSkip("cast|" + key, "Geo: skipping \"" + spellName + "\" (" + what + ") — " + reason);
                 return false;
@@ -567,7 +565,7 @@ namespace CurePlease.Core.Modules
             return true;
         }
 
-        private bool IsCastable(string spellName, out string reason)
+        private bool IsCastable(string spellName, uint availableMp, out string reason)
         {
             EliteAPI.ISpell spell = _state.FindSpell(spellName);
             if (spell == null)
@@ -579,6 +577,12 @@ namespace CurePlease.Core.Modules
             if (!_state.KnowsSpell(spell.Index) || !_state.MeetsSpellLevelRequirement(spell))
             {
                 reason = "not learned at this job level";
+                return false;
+            }
+
+            if (availableMp < spell.MPCost)
+            {
+                reason = "not enough MP";
                 return false;
             }
 
@@ -683,7 +687,8 @@ namespace CurePlease.Core.Modules
                 return;
             }
 
-            _lastAttempt[key] = DateTime.UtcNow;
+            _lastAttempt.Remove(key);
+            _shortRetry.Remove(key);
             _failures.Remove(key);
 
             // Enmity assist bookkeeping: a completed assist marks this enemy as

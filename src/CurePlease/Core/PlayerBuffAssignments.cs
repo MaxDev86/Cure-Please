@@ -20,6 +20,7 @@ namespace CurePlease.Core
     {
         private readonly Dictionary<string, HashSet<string>> _spellsByName =
             new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        private readonly object _gate = new object();
 
         /// <summary>Raised after any change (the popup reflects edits live).</summary>
         public event Action Changed;
@@ -27,12 +28,15 @@ namespace CurePlease.Core
         /// <summary>Current spells assigned to a member (empty when none).</summary>
         public IReadOnlyCollection<string> GetSpells(string memberName)
         {
-            return memberName != null && _spellsByName.TryGetValue(memberName, out HashSet<string> spells)
-                ? spells.ToArray()
-                : Array.Empty<string>();
+            lock (_gate)
+            {
+                return memberName != null && _spellsByName.TryGetValue(memberName, out HashSet<string> spells)
+                    ? spells.ToArray()
+                    : Array.Empty<string>();
+            }
         }
 
-        /// <summary>Adds or removes one assigned spell.</summary>
+        /// <summary>Adds or removes one assigned spell; a new tier replaces others in its catalog group.</summary>
         public void SetSpell(string memberName, string spell, bool assigned)
         {
             if (string.IsNullOrWhiteSpace(memberName) || string.IsNullOrWhiteSpace(spell))
@@ -40,21 +44,44 @@ namespace CurePlease.Core
                 return;
             }
 
-            if (!_spellsByName.TryGetValue(memberName, out HashSet<string> spells))
+            bool changed = false;
+            lock (_gate)
             {
-                if (!assigned)
+                if (!_spellsByName.TryGetValue(memberName, out HashSet<string> spells))
                 {
-                    return;
+                    if (!assigned)
+                    {
+                        return;
+                    }
+
+                    spells = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    _spellsByName[memberName] = spells;
                 }
 
-                spells = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                _spellsByName[memberName] = spells;
-            }
+                if (assigned)
+                {
+                    BuffCatalogEntry selected = BuffCatalog.Find(spell);
+                    if (selected != null)
+                    {
+                        changed = spells.RemoveWhere(existing =>
+                        {
+                            BuffCatalogEntry entry = BuffCatalog.Find(existing);
+                            return entry != null && entry.Group == selected.Group
+                                && !entry.Spell.Equals(selected.Spell, StringComparison.OrdinalIgnoreCase);
+                        }) > 0;
+                    }
 
-            bool changed = assigned ? spells.Add(spell) : spells.Remove(spell);
-            if (spells.Count == 0)
-            {
-                changed |= _spellsByName.Remove(memberName);
+                    changed |= spells.Add(spell);
+                }
+                else
+                {
+                    changed = spells.Remove(spell);
+                }
+
+                if (spells.Count == 0)
+                {
+                    changed |= _spellsByName.Remove(memberName);
+                }
             }
 
             if (changed)
@@ -66,9 +93,15 @@ namespace CurePlease.Core
         /// <summary>Drops every assignment (fresh attach, party disbanded).</summary>
         public void Clear()
         {
-            if (_spellsByName.Count > 0)
+            bool changed;
+            lock (_gate)
             {
+                changed = _spellsByName.Count > 0;
                 _spellsByName.Clear();
+            }
+
+            if (changed)
+            {
                 Changed?.Invoke();
             }
         }
@@ -76,9 +109,12 @@ namespace CurePlease.Core
         /// <summary>Consistent point-in-time copy for the engine tick.</summary>
         public IReadOnlyList<KeyValuePair<string, string[]>> Snapshot()
         {
-            return _spellsByName
-                .Select(pair => new KeyValuePair<string, string[]>(pair.Key, pair.Value.ToArray()))
-                .ToList();
+            lock (_gate)
+            {
+                return _spellsByName
+                    .Select(pair => new KeyValuePair<string, string[]>(pair.Key, pair.Value.ToArray()))
+                    .ToList();
+            }
         }
     }
 }

@@ -15,10 +15,9 @@ namespace CurePlease.Core
     ///   destination from the follow target while the flag is set, so we only
     ///   re-assert info/coords; the distance band and stop conditions are ours.
     /// - Native: targets the entity and sends /follow across several ticks (the
-    ///   client needs a beat between retarget and the command). Lock-on state is
-    ///   unreadable on the current client, so this mode is blind once engaged —
-    ///   it ignores the distance band and persists until the target is lost, the
-    ///   setting is cleared, or the user moves. Same trade-offs as legacy.
+    ///   client needs a beat between retarget and the command). The same distance
+    ///   band applies; stopping clears the client follow flag and resets the command
+    ///   sequence so follow can resume when the target moves away.
     ///
     /// From Windower's SmartFollow addon: the "intentional pause" concept — if
     /// the follow flag drops while we believe we are driving, the user grabbed
@@ -242,10 +241,14 @@ namespace CurePlease.Core
 
         private void StopMoving()
         {
-            if (_driving)
+            if (_driving || _nativeStage == 3)
             {
                 _state.SetAutoFollow(false);
                 _driving = false;
+                if (_nativeStage == 3)
+                {
+                    _nativeStage = 0; // Re-run target + /follow when movement may resume.
+                }
             }
 
             _stillTicks = 0;
