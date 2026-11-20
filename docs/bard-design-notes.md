@@ -17,6 +17,38 @@ Design reference:
 the design does not depend on the live page. Gear-set content of the guide
 is out of scope (the player gears the character; the bot sings).
 
+## Non-negotiable packet rules
+
+- **NEVER use the cast bar to decide whether a spell started, finished, or was
+  interrupted.** Fast Cast, song cast-time reductions, and Troubadour make its
+  ramp unreliable and can leave stale progress after the spell has landed.
+  Completion authority is the CurePlease3 addon's `0x028` action feed, using
+  `CUREPLEASE_casting3_<caster>_<spellId>_<outcome>`: category 4 = finished,
+  category 8/9 / 24931 = started, / 28787 = interrupted, and other params =
+  rejected. Start/reject packets take the spell id from the target action.
+  A rejection gets 1.5 s for a subsequent finish because GearSwap duplicate
+  commands can produce a stray reject first. Unrelated spell ids are ignored.
+  A missing completion returns `Unknown`, never a genuine-failure strike: BRD
+  uses a short reconciliation delay, then live buffs and recasts decide whether
+  the spell landed or should be retried.
+- Singer (`D:\FFXI\Windower4\addons\Singer`, source files only, not the zip)
+  follows the same packet-driven principle: 1.2 s after issuing a command and
+  its configurable 4 s default after a completed song. It does not wait for a
+  cast-bar idle state. Cure-Please retains its engine queue and a configurable
+  Bard grace period after completion (default 0.4 s; other casts keep 400 ms)
+  instead of copying those fixed delays.
+- Exact local buff expiry timestamps come primarily from the client's 192-byte
+  memory block: 32 u16 ids followed by 32 u32 timestamps on the 60 Hz Vana'diel
+  clock. `FFXI.Memory` resolves the block from the client's unique buff-getter
+  signature and preserves duplicate ids for same-family songs. Local packet `0x63`
+  supplies the same data as a fallback: the addon converts it using Singer's
+  Vana'diel/Unix epoch formula and sends
+  `CUREPLEASE_bufftimes_<name>_<buffId:remainingSeconds,...>`. A valid empty memory
+  block suppresses stale fallback timers; an unavailable block selects the addon.
+  PL refresh decisions use exact remaining time when present. Party packet `0x076`
+  contains no timestamps, so other recipients use the configured landing-time
+  estimate and refresh margin.
+
 Legacy state: bard code in `legacy/Form1.cs` is partial and buggy
 (see legacy-assessment.md section 2, findings 5–7: wrong-name song guards,
 one-song-per-tick `else if` recovery, songs counted on the monitored player

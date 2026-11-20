@@ -24,23 +24,25 @@ namespace CurePlease.Settings
         private readonly SettingsService _settings;
         private readonly ProfileService _profiles;
         private readonly GlobalSettingsService _globals;
-        private readonly CurePleaseSettings _clone;
-        private readonly BardEditModel _bardModel;
-        private readonly HealingEditModel _healingModel;
-        private readonly DebuffsEditModel _debuffsModel;
-        private readonly BuffsEditModel _buffsModel;
-        private readonly SchEditModel _schModel;
-        private readonly WhmEditModel _whmModel;
-        private readonly PrioritiesEditModel _prioritiesModel;
+        private readonly BuffFilterPreset _buffFilter;
+        private CurePleaseSettings _clone;
+        private BardEditModel _bardModel;
+        private HealingEditModel _healingModel;
+        private DebuffsEditModel _debuffsModel;
+        private BuffsEditModel _buffsModel;
+        private SchEditModel _schModel;
+        private WhmEditModel _whmModel;
+        private PrioritiesEditModel _prioritiesModel;
 
-        private readonly byte _comboMain;
-        private readonly byte _comboSub;
+        private byte _comboMain;
+        private byte _comboSub;
         private readonly string _forcedPageKey;
         private readonly string _suggestedProfileName;
 
         /// <summary>Baseline JSON captured at open (and refreshed by Save As); Cancel/X prompts when the edited clone differs.</summary>
         private string _originalJson;
         private bool _closeConfirmed;
+        private bool _profileComboGuard;
 
         public SettingsWindow(SettingsService settings, ProfileService profiles, GlobalSettingsService globals,
             string initialPage = null, string suggestedProfileName = null, BuffFilterPreset buffFilter = null)
@@ -50,6 +52,7 @@ namespace CurePlease.Settings
             _settings = settings;
             _profiles = profiles;
             _globals = globals;
+            _buffFilter = buffFilter;
             _suggestedProfileName = suggestedProfileName;
             _clone = settings.Current.DeepClone();
             _bardModel = new BardEditModel(_clone.Bard);
@@ -201,6 +204,12 @@ namespace CurePlease.Settings
 
         private void Save_Click(object sender, RoutedEventArgs e)
         {
+            if (!_bardModel.ValidateGracePeriod())
+            {
+                StatusText.Text = _bardModel.GracePeriodError;
+                return;
+            }
+
             CommitEdits();
 
             // Publish a copy for the profile write; restore the prior state if it fails.
@@ -240,12 +249,95 @@ namespace CurePlease.Settings
 
         private void UpdateProfileLabel()
         {
-            ProfileNameText.Text = _profiles.ActiveName ?? "(unsaved settings)";
-            string combo = ComboLabel();
-            if (combo != null)
+            _profileComboGuard = true;
+            try
             {
-                ProfileNameText.Text += "  —  " + combo;
+                string active = _profiles.ActiveName;
+                var names = _profiles.ListProfiles();
+                ProfileComboBox.ItemsSource = names;
+                ProfileComboBox.SelectedItem = active == null
+                    ? null
+                    : names.FirstOrDefault(n => n.Equals(active, StringComparison.OrdinalIgnoreCase));
+                ProfileComboBox.Text = active ?? "(unsaved settings)";
+                string combo = ComboLabel();
+                ProfileHintText.Text = combo == null ? string.Empty : "— " + combo;
             }
+            finally
+            {
+                _profileComboGuard = false;
+            }
+        }
+
+        private void ProfileComboBox_DropDownOpened(object sender, EventArgs e)
+        {
+            UpdateProfileLabel();
+        }
+
+        private void ProfileComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_profileComboGuard || !IsInitialized || !(ProfileComboBox.SelectedItem is string name)
+                || name.Equals(_profiles.ActiveName, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            if (HasUnsavedProfileEdits()
+                && MessageBox.Show(this, "Load '" + name + "' and discard unsaved changes?",
+                    "Cure Please — Settings", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            {
+                UpdateProfileLabel();
+                return;
+            }
+
+            if (!_profiles.SwitchTo(name))
+            {
+                StatusText.Text = "Profile load failed: " + name;
+                UpdateProfileLabel();
+                return;
+            }
+
+            ReloadEditorFromProfile(name);
+        }
+
+        private bool HasUnsavedProfileEdits()
+        {
+            CommitEdits();
+            return _bardModel.GracePeriodError != null
+                || SettingsService.SerializeForComparison(_clone) != _originalJson;
+        }
+
+        private void ReloadEditorFromProfile(string profileName)
+        {
+            _clone = _settings.Current.DeepClone();
+            _bardModel = new BardEditModel(_clone.Bard);
+            _healingModel = new HealingEditModel(_clone);
+            _debuffsModel = new DebuffsEditModel(_clone);
+            _buffsModel = new BuffsEditModel(_clone);
+            if (_buffFilter != null)
+            {
+                _buffsModel.FilterMainJob = _buffFilter.MainJob;
+                _buffsModel.FilterMainLevel = _buffFilter.MainLevel;
+                _buffsModel.FilterSubJob = _buffFilter.SubJob;
+                _buffsModel.FilterSubLevel = _buffFilter.SubLevel;
+            }
+            _schModel = new SchEditModel(_clone.Sch);
+            _whmModel = new WhmEditModel(_clone.Whm);
+            _prioritiesModel = new PrioritiesEditModel(_clone.Priorities);
+
+            bool comboKnown = ProfileService.TryComboFromProfileName(profileName, out _comboMain, out _comboSub);
+            ComboFilterBox.Visibility = comboKnown ? Visibility.Visible : Visibility.Collapsed;
+            if (comboKnown)
+            {
+                ComboFilterBox.Content = "Only job pages for " + ComboLabel();
+                ComboFilterBox.IsChecked = _globals.Current.FilterJobPagesByCombo;
+            }
+
+            CommitEdits();
+            _originalJson = SettingsService.SerializeForComparison(_clone);
+            UpdateProfileLabel();
+            BuildNav();
+            NavList_SelectionChanged(NavList, null);
+            StatusText.Text = "Loaded " + profileName;
         }
 
         private void SaveAs_Click(object sender, RoutedEventArgs e)
@@ -263,6 +355,12 @@ namespace CurePlease.Settings
                     "A profile named '" + name + "' already exists. Overwrite it?",
                     "Save As", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
             {
+                return;
+            }
+
+            if (!_bardModel.ValidateGracePeriod())
+            {
+                StatusText.Text = _bardModel.GracePeriodError;
                 return;
             }
 

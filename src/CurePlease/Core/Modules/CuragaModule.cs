@@ -7,17 +7,19 @@ using FFXI.Memory;
 namespace CurePlease.Core.Modules
 {
     /// <summary>
-    /// Party-wide cures. Fires when enough reachable, same-zone, own-party members
+    /// Party-wide cures. Fires when enough reachable, same-zone party members
     /// are below the Curaga threshold, centered on the lowest-HPP member. Scored against single-target
     /// cures, so it no longer pre-empts an emergency heal the way the legacy fixed
     /// order did.
     ///
-    /// Two ways to heal the party: the native Curaga line (WHM), or — on SCH main
+    /// Two ways to heal the PL's party: the native Curaga line (WHM), or — on SCH main
     /// or sub — Accession + Cure I–IV (Cure V/VI are not Accession-compatible).
     /// The Accession path preps the JA first and holds the cast until the buff
     /// lands (10s verify window), then casts the cure on the center member;
-    /// whoever is in range gets healed. Falls back to the Curaga line when no
-    /// stratagem charge is available.
+    /// whoever is in range gets healed. An opt-in extends this to the monitored
+    /// party when the PL is outside it, since Accession follows the named target's
+    /// party. Native Curaga remains own-party-only and is the no-charge fallback
+    /// only when the PL has a party of their own.
     /// </summary>
     public sealed class CuragaModule : IDecisionModule
     {
@@ -62,11 +64,19 @@ namespace CurePlease.Core.Modules
             }
 
             PlayerState pl = snapshot.Player;
+            bool accessionMode = settings.Curaga.UseAccession
+                && (pl.MainJob == JobScholar || pl.SubJob == JobScholar)
+                && (!snapshot.PartyFromMonitored || settings.Curaga.UseAccessionOnMonitoredParty);
+            if (snapshot.PartyFromMonitored && !accessionMode)
+            {
+                return;
+            }
 
-            // AoE cures only land on the OWN party — alliance members (slots 6-17)
-            // neither count toward the threshold nor receive the heal.
+            // Native Curaga only lands on the PL's own party. With the opt-in
+            // cross-party Accession path, party index 0 is the target's party instead.
             List<PartyMemberState> injured = snapshot.PartyMembers
                 .Where(m => m.Active
+                            && snapshot.PartyMemberSelections.IsEnabled(m.Name)
                             && m.PartyIndex == 0
                             && m.CurrentHP > 0
                             && m.Zone == pl.ZoneId
@@ -95,9 +105,8 @@ namespace CurePlease.Core.Modules
             double score = settings.Priorities.CuragaWeight * avgUrgency * Math.Min(coverage, 2.0);
 
             // Accession path (SCH main or sub): Cure I–IV as the party heal. The
-            // cure must actually be castable before a charge is prepped.
-            bool accessionMode = settings.Curaga.UseAccession
-                && (pl.MainJob == JobScholar || pl.SubJob == JobScholar);
+            // cure must actually be castable before a charge is prepped. Casting on
+            // an outside player extends the effect to that target's party.
             if (accessionMode)
             {
                 EliteAPI.ISpell cureSpell = SpellBook.ResolveTier(
@@ -136,12 +145,20 @@ namespace CurePlease.Core.Modules
                             TargetName = "<me>",
                             IsJobAbility = true,
                             PrepBuff = StatusEffect.Accession,
-                            Description = "Accession (before party cure)",
+                            Description = snapshot.PartyFromMonitored
+                                ? "Accession (before monitored-party cure)"
+                                : "Accession (before party cure)",
                         });
                         return;
                     }
                 }
-                // No castable cure or no stratagem: fall through to the Curaga line.
+                // No castable cure or no stratagem: only the PL's own party can
+                // fall back to the native Curaga line.
+            }
+
+            if (snapshot.PartyFromMonitored)
+            {
+                return;
             }
 
             EliteAPI.ISpell spell = SpellBook.ResolveTier(

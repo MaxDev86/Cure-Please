@@ -331,7 +331,8 @@ namespace CurePlease.Core.Modules
                 _lastFailure.Remove(key);
                 _shortRetry.Remove(key);
             }
-            else if (result.Outcome == CastOutcome.NotStarted || result.Outcome == CastOutcome.Interrupted)
+            else if (result.Outcome == CastOutcome.NotStarted || result.Outcome == CastOutcome.Interrupted
+                || result.Outcome == CastOutcome.Unknown)
             {
                 _lastFailure.Remove(key);
                 _shortRetry[key] = DateTime.UtcNow;
@@ -378,7 +379,7 @@ namespace CurePlease.Core.Modules
             List<ActionCandidate> candidates)
         {
             int min = settings.Debuffs.GroupRemovalMinCount;
-            if (min < 2)
+            if (min < 2 || snapshot.PartyFromMonitored)
             {
                 return;
             }
@@ -551,7 +552,8 @@ namespace CurePlease.Core.Modules
 
             foreach (PartyMemberState member in snapshot.PartyMembers)
             {
-                if (member.Active && member.CurrentHP > 0 && member.CurrentHPP <= threshold)
+                if (member.Active && member.CurrentHP > 0 && member.CurrentHPP <= threshold
+                    && snapshot.PartyMemberSelections.IsEnabled(member.Name))
                 {
                     return true;
                 }
@@ -594,6 +596,11 @@ namespace CurePlease.Core.Modules
             bool isMonitored)
         {
             PlayerState pl = snapshot.Player;
+            if (!snapshot.PartyMemberSelections.IsEnabled(targetName))
+            {
+                return;
+            }
+
             bool isSelf = targetName.Equals(pl.Name, StringComparison.OrdinalIgnoreCase);
             if (!isSelf && !InRemovalRange(snapshot, targetName))
             {

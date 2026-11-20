@@ -1,6 +1,10 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace CurePlease.Settings.Pages
 {
@@ -9,8 +13,15 @@ namespace CurePlease.Settings.Pages
     /// mirrors of the settings lists (so add/remove/reorder just work), and Commit
     /// copies them back into the settings clone before it is published.
     /// </summary>
-    public sealed class BardEditModel
+    public sealed class BardEditModel : INotifyPropertyChanged
     {
+        private const string InvalidGracePeriod = "Enter a non-negative number with up to two decimal places.";
+        private static readonly Regex GracePeriodPattern =
+            new Regex(@"^[0-9]+(?:\.[0-9]{1,2})?$", RegexOptions.CultureInvariant);
+
+        private string _gracePeriodText;
+        private string _gracePeriodError;
+
         /// <summary>The settings clone being edited (scalar properties bind directly).</summary>
         public BardSettings Settings { get; }
 
@@ -20,15 +31,63 @@ namespace CurePlease.Settings.Pages
         public ObservableCollection<string> EnemyDebuffSongs { get; }
         public ObservableCollection<PianissimoTarget> PianissimoTargets { get; }
 
+        public event PropertyChangedEventHandler PropertyChanged;
+
         public BardEditModel(BardSettings settings)
         {
             Settings = settings;
+            _gracePeriodText = settings.SongGracePeriodSeconds.ToString("0.##", CultureInfo.InvariantCulture);
             PartySongs = new ObservableCollection<string>(settings.PartySongs);
             DummySongs = new ObservableCollection<string>(settings.DummySongs);
             OwnedInstruments = new ObservableCollection<string>(settings.OwnedInstruments);
             EnemyDebuffSongs = new ObservableCollection<string>(settings.EnemyDebuffSongs);
             PianissimoTargets = new ObservableCollection<PianissimoTarget>(
                 settings.PianissimoTargets.Select(p => new PianissimoTarget { Song = p.Song, Target = p.Target }));
+        }
+
+        public string GracePeriodText
+        {
+            get => _gracePeriodText;
+            set
+            {
+                _gracePeriodText = value;
+                ValidateGracePeriod();
+                Notify(nameof(GracePeriodText));
+            }
+        }
+
+        public string GracePeriodError
+        {
+            get => _gracePeriodError;
+            private set
+            {
+                _gracePeriodError = value;
+                Notify(nameof(GracePeriodError));
+            }
+        }
+
+        public bool ValidateGracePeriod()
+        {
+            bool valid = TryParseGracePeriod(_gracePeriodText, out double seconds);
+            if (valid)
+            {
+                Settings.SongGracePeriodSeconds = seconds;
+            }
+
+            GracePeriodError = valid ? null : InvalidGracePeriod;
+            return valid;
+        }
+
+        public static bool TryParseGracePeriod(string text, out double seconds)
+        {
+            seconds = 0;
+            string trimmed = text?.Trim();
+            return !string.IsNullOrEmpty(trimmed)
+                && GracePeriodPattern.IsMatch(trimmed)
+                && double.TryParse(trimmed, NumberStyles.Number, CultureInfo.InvariantCulture, out seconds)
+                && !double.IsNaN(seconds)
+                && !double.IsInfinity(seconds)
+                && seconds >= 0;
         }
 
         public void Commit()
@@ -41,6 +100,11 @@ namespace CurePlease.Settings.Pages
                 .Where(p => !string.IsNullOrWhiteSpace(p.Song) && !string.IsNullOrWhiteSpace(p.Target))
                 .Select(p => new PianissimoTarget { Song = p.Song.Trim(), Target = p.Target.Trim() })
                 .ToList();
+        }
+
+        private void Notify(string name)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
         }
 
         private static List<string> Clean(IEnumerable<string> items)
@@ -90,6 +154,13 @@ namespace CurePlease.Settings.Pages
                     || family == FFXI.Memory.StatusEffect.Threnody
                     || family == FFXI.Memory.StatusEffect.Lullaby;
             })
+            .ToList();
+
+        /// <summary>Beneficial songs only; enemy-target songs and instant effects are not valid Pianissimo choices.</summary>
+        public static readonly IReadOnlyList<string> KnownPianissimoSongs = KnownSongs
+            .Where(s => !KnownEnemySongs.Contains(s)
+                        && s != "Maiden's Virelai"
+                        && s != "Magic Finale")
             .ToList();
 
         public static readonly IReadOnlyList<string> DummyPlacements = new[] { "Middle", "First" };

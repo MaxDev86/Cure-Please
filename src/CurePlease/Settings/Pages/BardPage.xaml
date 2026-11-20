@@ -103,7 +103,7 @@
                 <DataGrid.Columns>
                     <DataGridComboBoxColumn Header="Song" Width="*"
                         SelectedItemBinding="{Binding Song, UpdateSourceTrigger=PropertyChanged}"
-                        ItemsSource="{x:Static local:BardEditModel.KnownSongs}"/>
+                        ItemsSource="{x:Static local:BardEditModel.KnownPianissimoSongs}"/>
                     <DataGridTextColumn Header="Target" Binding="{Binding Target, UpdateSourceTrigger=PropertyChanged}" Width="*"/>
                 </DataGrid.Columns>
             </DataGrid>
@@ -129,15 +129,22 @@
             <!-- Timing -->
             <TextBlock Text="Timing" FontWeight="Bold" Margin="0,14,0,4"/>
             <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                <TextBlock Text="Grace period (s):" VerticalAlignment="Center" Width="170"/>
+                <TextBox Text="{Binding GracePeriodText, UpdateSourceTrigger=PropertyChanged}" Width="70"/>
+                <TextBlock Text="Delay after a completed song (up to two decimal places)."
+                           VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray"/>
+            </StackPanel>
+            <TextBlock Text="{Binding GracePeriodError}" Foreground="Red" TextWrapping="Wrap"/>
+            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                 <TextBlock Text="Song duration (s):" VerticalAlignment="Center" Width="170"/>
                 <TextBox Text="{Binding Settings.BaseDurationSeconds, UpdateSourceTrigger=PropertyChanged}" Width="70"/>
-                <TextBlock Text="Estimate before Troubadour/Soul Voice doubling; used only to refresh early."
-                           VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray"/>
+                <TextBlock Text="Fallback before Troubadour/Soul Voice doubling; the PL's packet-reported expiry is used when available."
+                           VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray" TextWrapping="Wrap"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                 <TextBlock Text="Refresh margin (s):" VerticalAlignment="Center" Width="170"/>
                 <TextBox Text="{Binding Settings.RefreshMarginSeconds, UpdateSourceTrigger=PropertyChanged}" Width="70"/>
-                <TextBlock Text="Re-sing when estimated remaining time drops below this."
+                <TextBlock Text="Re-sing when exact or estimated remaining time drops below this."
                            VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" Margin="0,4,0,0">

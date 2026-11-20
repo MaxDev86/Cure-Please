@@ -67,7 +67,8 @@ namespace CurePlease.Core.Modules
 
             foreach (PartyMemberState member in snapshot.PartyMembers)
             {
-                if (!member.Active || member.CurrentHP == 0)
+                if (!member.Active || member.CurrentHP == 0
+                    || !snapshot.PartyMemberSelections.IsEnabled(member.Name))
                 {
                     continue;
                 }
@@ -123,9 +124,9 @@ namespace CurePlease.Core.Modules
                 double urgency = (100.0 - member.CurrentHPP) / 100.0;
                 double score = settings.Priorities.CureWeight * urgency * priority;
 
-                if (member.PartyIndex == 0)
+                if (member.PartyIndex == 0 && !snapshot.PartyFromMonitored)
                 {
-                    cureCandidates++; // Majesty's AoE cannot reach alliance parties.
+                    cureCandidates++; // Majesty only reaches the PL's own party.
                 }
 
                 if (score > bestCureScore)

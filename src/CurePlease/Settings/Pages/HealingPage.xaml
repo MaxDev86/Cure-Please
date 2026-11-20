@@ -72,6 +72,12 @@
             </StackPanel>
             <CheckBox Content="Use Accession + Cure I–IV instead of Curaga (SCH main or sub; one stratagem charge per party cure — Cure V/VI are incompatible)"
                       IsChecked="{Binding Settings.Curaga.UseAccession, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0"/>
+            <CheckBox IsChecked="{Binding Settings.Curaga.UseAccessionOnMonitoredParty, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0">
+                <CheckBox.Content>
+                    <TextBlock Text="Allow Accession party cures while the PL is outside the monitored party (targets an injured member; requires the option above)"
+                               TextWrapping="Wrap"/>
+                </CheckBox.Content>
+            </CheckBox>
             <DataGrid ItemsSource="{Binding CuragaTiers}" AutoGenerateColumns="False" IsReadOnly="False"
                       CanUserAddRows="False" CanUserDeleteRows="False" HeadersVisibility="Column"
                       Height="130" Margin="0,8,0,0">

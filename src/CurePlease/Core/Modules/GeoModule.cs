@@ -666,9 +666,10 @@ namespace CurePlease.Core.Modules
 
             if (!result.Succeeded)
             {
-                if (result.Outcome == CastOutcome.NotStarted || result.Outcome == CastOutcome.Interrupted)
+                if (result.Outcome == CastOutcome.NotStarted || result.Outcome == CastOutcome.Interrupted
+                    || result.Outcome == CastOutcome.Unknown)
                 {
-                    // Transient: a cast was still in progress or movement interrupted —
+                    // Transient: a cast was rejected, interrupted, or unresolved —
                     // retry soon instead of striking toward session-disable.
                     _lastAttempt.Remove(key);
                     _shortRetry[key] = DateTime.UtcNow;

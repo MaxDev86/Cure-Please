@@ -202,7 +202,7 @@ namespace CurePlease
 
         // ----- shared addon listener routing -----
 
-        private void OnAddonCastEvent(string caster, CastEventKind kind)
+        private void OnAddonCastEvent(string caster, int spellId, CastEventKind kind)
         {
             // v2 events are caster-name-keyed: deliver only to the tab driving that
             // character. Bare v1 events (caster null) go to every tab.
@@ -210,7 +210,7 @@ namespace CurePlease
             {
                 if (caster == null || caster.Equals(view.CharacterName, StringComparison.OrdinalIgnoreCase))
                 {
-                    view.NotifyCastEvent(kind);
+                    view.NotifyCastEvent(kind, spellId);
                 }
             }
         }
@@ -330,7 +330,7 @@ namespace CurePlease
             finally
             {
                 _shutdownComplete = true;
-                Close();
+                _ = Dispatcher.BeginInvoke(new Action(Close));
             }
         }
     }

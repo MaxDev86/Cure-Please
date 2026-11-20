@@ -129,6 +129,13 @@ namespace CurePlease.Core
         public bool IsInAlliance => PartyCounts[1] > 0 || PartyCounts[2] > 0;
     }
 
+    /// <summary>One local buff and its remaining whole seconds.</summary>
+    public sealed class BuffTimeRemaining
+    {
+        public short BuffId { get; set; }
+        public int Seconds { get; set; }
+    }
+
     /// <summary>
     /// One consistent read of everything the engine needs for a decision tick.
     /// Built once per tick by <see cref="GameStateService"/> and shared by all modules.
@@ -142,6 +149,16 @@ namespace CurePlease.Core
 
         /// <summary>All 18 party/alliance slots; check <see cref="PartyMemberState.Active"/>.</summary>
         public IReadOnlyList<PartyMemberState> PartyMembers { get; set; } = Array.Empty<PartyMemberState>();
+
+        /// <summary>Session-only enable selections for per-member support actions.</summary>
+        public PartyMemberSelections PartyMemberSelections { get; set; } = new PartyMemberSelections();
+
+        /// <summary>
+        /// True when <see cref="PartyMembers"/> comes from the monitored client because
+        /// the PL has no party of their own. Single-target actions remain valid, but
+        /// own-party AoE logic must not treat this roster as the PL's party.
+        /// </summary>
+        public bool PartyFromMonitored { get; set; }
 
         /// <summary>Alliance composition; IsInAlliance false for solo/single party.</summary>
         public AllianceState Alliance { get; set; } = new AllianceState();
@@ -186,6 +203,21 @@ namespace CurePlease.Core
         /// </summary>
         public IReadOnlyDictionary<string, short[]> PartyBuffs { get; set; } =
             new Dictionary<string, short[]>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Exact local-player buff remaining times from the client memory block, with
+        /// addon packet 0x63 as fallback. Duplicate buff ids are preserved because two
+        /// songs can share a family. Party packet 0x076 has no timestamps, so this is
+        /// available only for the local player.
+        /// </summary>
+        public IReadOnlyList<BuffTimeRemaining> PlayerBuffTimes { get; set; } =
+            Array.Empty<BuffTimeRemaining>();
+
+        /// <summary>
+        /// True when the memory read succeeded, including a valid empty buff list.
+        /// False selects the addon fallback and distinguishes unavailable data from no buffs.
+        /// </summary>
+        public bool PlayerBuffTimesAvailable { get; set; }
 
         public bool IsLoggedIn => Player != null;
     }

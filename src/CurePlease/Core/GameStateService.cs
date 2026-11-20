@@ -112,6 +112,7 @@ namespace CurePlease.Core
     /// </summary>
     public class GameStateService
     {
+        private readonly object _attachmentGate = new object();
         private EliteAPI _pl;
         private EliteAPI _monitored;
         private int _plProcessId;
@@ -152,7 +153,20 @@ namespace CurePlease.Core
         /// <summary>Last error that drove the state to <see cref="ConnectionState.Lost"/>, if any.</summary>
         public string LastError { get; private set; }
 
-        public bool IsAttached => _pl != null;
+        public bool IsAttached
+        {
+            get { lock (_attachmentGate) { return _pl != null; } }
+        }
+
+        public bool IsMonitoredAttached
+        {
+            get { lock (_attachmentGate) { return _monitored != null; } }
+        }
+
+        public int MonitoredProcessId
+        {
+            get { lock (_attachmentGate) { return _monitoredProcessId; } }
+        }
 
         /// <summary>
         /// Raw <see cref="FFXI.Memory.LoginStatus"/> value from the most recent
@@ -164,34 +178,46 @@ namespace CurePlease.Core
 
         public void Attach(int processId)
         {
-            Detach();
-            _pl = new EliteAPI(processId);
-            _plProcessId = processId;
-            SetState(ConnectionState.AttachedNotLoggedIn);
+            lock (_attachmentGate)
+            {
+                Detach();
+                _pl = new EliteAPI(processId);
+                _plProcessId = processId;
+                SetState(ConnectionState.AttachedNotLoggedIn);
+            }
         }
 
         public void AttachMonitored(int processId)
         {
-            DetachMonitored();
-            _monitored = new EliteAPI(processId);
-            _monitoredProcessId = processId;
+            lock (_attachmentGate)
+            {
+                DetachMonitored();
+                _monitored = new EliteAPI(processId);
+                _monitoredProcessId = processId;
+            }
         }
 
         public void DetachMonitored()
         {
-            _monitored?.Dispose();
-            _monitored = null;
-            _monitoredProcessId = 0;
+            lock (_attachmentGate)
+            {
+                _monitored?.Dispose();
+                _monitored = null;
+                _monitoredProcessId = 0;
+            }
         }
 
         public void Detach()
         {
-            DetachMonitored();
-            _pl?.Dispose();
-            _pl = null;
-            _plProcessId = 0;
-            ResetMovementTracking();
-            SetState(ConnectionState.Detached);
+            lock (_attachmentGate)
+            {
+                DetachMonitored();
+                _pl?.Dispose();
+                _pl = null;
+                _plProcessId = 0;
+                ResetMovementTracking();
+                SetState(ConnectionState.Detached);
+            }
         }
 
         /// <summary>Drops movement history (attach/login/zone boundaries).</summary>
@@ -210,6 +236,14 @@ namespace CurePlease.Core
         /// Virtual so headless tests can feed the engine synthetic snapshots.
         /// </summary>
         public virtual GameSnapshot TakeSnapshot()
+        {
+            lock (_attachmentGate)
+            {
+                return TakeSnapshotCore();
+            }
+        }
+
+        private GameSnapshot TakeSnapshotCore()
         {
             if (_pl == null)
             {
@@ -292,41 +326,55 @@ namespace CurePlease.Core
                 player.IsMoving = movedThisTick;
                 player.StationaryFor = StationaryFor;
 
-                List<PartyMemberState> members = new List<PartyMemberState>(18);
-                foreach (EliteAPI.PartyMember m in _pl.Party.GetPartyMembers())
+                List<PartyMemberState> plMembers = ReadPartyMembers(_pl);
+                List<PartyMemberState> monitoredMembers = null;
+                string monitoredName = null;
+                if (_monitored != null && _monitored.Player.LoginStatus == (int)LoginStatus.LoggedIn)
                 {
-                    members.Add(new PartyMemberState
-                    {
-                        MemberNumber = m.MemberNumber,
-                        PartyIndex = (byte)(m.MemberNumber / 6),
-                        EntityIndex = m.Index,
-                        Name = m.Name ?? string.Empty,
-                        ServerId = m.ID,
-                        TargetIndex = m.TargetIndex,
-                        CurrentHP = m.CurrentHP,
-                        CurrentMP = m.CurrentMP,
-                        CurrentTP = m.CurrentTP,
-                        CurrentHPP = m.CurrentHPP,
-                        CurrentMPP = m.CurrentMPP,
-                        Zone = m.Zone,
-                        MainJob = m.MainJob,
-                        MainJobLevel = m.MainJobLvl,
-                        SubJob = m.SubJob,
-                        SubJobLevel = m.SubJobLvl,
-                        Active = m.Active != 0,
-                    });
+                    monitoredName = _monitored.Player.Name ?? string.Empty;
+                    monitoredMembers = ReadPartyMembers(_monitored);
                 }
+
+                bool useMonitoredParty = ShouldUseMonitoredParty(
+                    player.Name, monitoredName, plMembers, monitoredMembers);
 
                 GameSnapshot snapshot = new GameSnapshot
                 {
                     Timestamp = DateTime.UtcNow,
                     Player = player,
-                    PartyMembers = members,
+                    PartyMembers = useMonitoredParty ? monitoredMembers : plMembers,
+                    PartyFromMonitored = useMonitoredParty,
+                    MonitoredName = monitoredName,
                 };
 
                 try
                 {
-                    EliteAPI.AllianceInfo alliance = _pl.Party.GetAllianceInfo();
+                    EliteAPI.BuffTimeRemaining[] buffTimes = _pl.Player.GetBuffTimes();
+                    if (buffTimes != null)
+                    {
+                        snapshot.PlayerBuffTimesAvailable = true;
+                        snapshot.PlayerBuffTimes = buffTimes.Select(buff => new BuffTimeRemaining
+                        {
+                            BuffId = buff.BuffId,
+                            Seconds = buff.Seconds,
+                        }).ToArray();
+                    }
+                }
+                catch
+                {
+                    // The addon's 0x63 feed remains available when direct memory reads fail.
+                }
+
+                if (monitoredMembers != null)
+                {
+                    snapshot.MonitoredBuffs = _monitored.Player.GetPlayerInfo().Buffs ?? Array.Empty<short>();
+                    snapshot.MonitoredStatus = _monitored.Player.PlayerState;
+                }
+
+                try
+                {
+                    EliteAPI allianceSource = useMonitoredParty ? _monitored : _pl;
+                    EliteAPI.AllianceInfo alliance = allianceSource.Party.GetAllianceInfo();
                     snapshot.Alliance = new AllianceState
                     {
                         PartyCounts = new[] { alliance.Party0Count, alliance.Party1Count, alliance.Party2Count },
@@ -345,13 +393,6 @@ namespace CurePlease.Core
                     snapshot.TargetIndex = target.TargetIndex;
                     snapshot.TargetName = target.TargetName ?? string.Empty;
                     snapshot.TargetHpp = target.TargetHealthPercent;
-                }
-
-                if (_monitored != null && _monitored.Player.LoginStatus == (int)LoginStatus.LoggedIn)
-                {
-                    snapshot.MonitoredName = _monitored.Player.Name ?? string.Empty;
-                    snapshot.MonitoredBuffs = _monitored.Player.GetPlayerInfo().Buffs ?? Array.Empty<short>();
-                    snapshot.MonitoredStatus = _monitored.Player.PlayerState;
                 }
 
                 try
@@ -383,6 +424,67 @@ namespace CurePlease.Core
                 SetState(ConnectionState.Lost);
                 return null;
             }
+        }
+
+        private static List<PartyMemberState> ReadPartyMembers(EliteAPI api)
+        {
+            var members = new List<PartyMemberState>(18);
+            foreach (EliteAPI.PartyMember m in api.Party.GetPartyMembers())
+            {
+                members.Add(new PartyMemberState
+                {
+                    MemberNumber = m.MemberNumber,
+                    PartyIndex = (byte)(m.MemberNumber / 6),
+                    EntityIndex = m.Index,
+                    Name = m.Name ?? string.Empty,
+                    ServerId = m.ID,
+                    TargetIndex = m.TargetIndex,
+                    CurrentHP = m.CurrentHP,
+                    CurrentMP = m.CurrentMP,
+                    CurrentTP = m.CurrentTP,
+                    CurrentHPP = m.CurrentHPP,
+                    CurrentMPP = m.CurrentMPP,
+                    Zone = m.Zone,
+                    MainJob = m.MainJob,
+                    MainJobLevel = m.MainJobLvl,
+                    SubJob = m.SubJob,
+                    SubJobLevel = m.SubJobLvl,
+                    Active = m.Active != 0,
+                });
+            }
+
+            return members;
+        }
+
+        /// <summary>
+        /// Legacy cross-client rule: when the PL has no other own-party members, use
+        /// the monitored client's roster for display and named cures. Entity indexes
+        /// are zone-wide, so range checks still resolve them through the PL client.
+        /// </summary>
+        public static bool ShouldUseMonitoredParty(
+            string plName,
+            string monitoredName,
+            IReadOnlyList<PartyMemberState> plMembers,
+            IReadOnlyList<PartyMemberState> monitoredMembers)
+        {
+            if (string.IsNullOrEmpty(monitoredName) || monitoredMembers == null)
+            {
+                return false;
+            }
+
+            bool monitoredInParty = monitoredMembers.Any(m => m.Active
+                && m.MemberNumber < 6
+                && m.Name.Equals(monitoredName, StringComparison.OrdinalIgnoreCase));
+            if (!monitoredInParty)
+            {
+                return false;
+            }
+
+            bool plHasParty = plMembers != null && plMembers.Any(m => m.Active
+                && m.MemberNumber < 6
+                && m.Name.Length > 0
+                && !m.Name.Equals(plName, StringComparison.OrdinalIgnoreCase));
+            return !plHasParty;
         }
 
         /// <summary>Sends a command line to the game (e.g. /ma, /ja, /item). Returns false when detached or the send failed (game gone).</summary>

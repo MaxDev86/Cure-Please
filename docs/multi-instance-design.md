@@ -5,7 +5,14 @@ attached process; the shared `AddonListener` routes cast events by character
 name; `PidRegistry` blocks two tabs from claiming the same PL process; a
 profile-collision warning fires when two tabs hold the same profile file;
 `EliteAPI` implements `IDisposable` and `GameStateService.Detach()` disposes
-deterministically. The original research follows.
+deterministically. PL and monitored processes have independent attachment rows;
+monitored switching is synchronized with snapshots and does not detach the PL.
+The large right-hand action button follows legacy Start/Pause/Resume behavior and
+requires both attachments; either detach or a monitored switch stops the engine,
+and Start always clears saved/zone pauses. A draggable splitter resizes the party
+grid and log. An out-of-party PL uses the monitored client's party roster for
+display and named cures; an opt-in Accession path targets a member to reach their
+party, while native own-party AoEs remain suppressed. The original research follows.
 
 What it would take to attach to N FFXI processes from one Cure-Please window:
 one tab per instance, each tab its own PL character, profile, and optional

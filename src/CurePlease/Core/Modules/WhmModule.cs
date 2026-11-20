@@ -138,6 +138,7 @@ namespace CurePlease.Core.Modules
             foreach (PartyMemberState member in snapshot.PartyMembers)
             {
                 if (!member.Active || member.CurrentHP == 0 || member.Zone != pl.ZoneId
+                    || !snapshot.PartyMemberSelections.IsEnabled(member.Name)
                     || member.Name.Equals(pl.Name, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;

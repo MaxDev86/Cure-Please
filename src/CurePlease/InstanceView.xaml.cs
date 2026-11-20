@@ -32,6 +32,9 @@ namespace CurePlease
         /// <summary>Session-only per-member buff assignments (never saved to profiles).</summary>
         private readonly PlayerBuffAssignments _playerBuffs = new PlayerBuffAssignments();
 
+        /// <summary>Session-only per-member enable selections (checked by default).</summary>
+        private readonly PartyMemberSelections _partySelections = new PartyMemberSelections();
+
         /// <summary>Open Buffs popups by member name — one per member.</summary>
         private readonly Dictionary<string, PlayerBuffsPopup> _buffPopups = new Dictionary<string, PlayerBuffsPopup>(StringComparer.OrdinalIgnoreCase);
         private string _lastPlayerName = "";
@@ -39,6 +42,7 @@ namespace CurePlease
         private PlayerJobsWindow _jobsWindow;
         private bool _profileComboGuard;
         private bool _addonLoadPending;
+        private bool _attachmentStopHandled;
         private int _claimedPlPid;
         private byte _lastMainJob;
         private byte _lastSubJob;
@@ -89,7 +93,11 @@ namespace CurePlease
             _pids = pids;
 
             _casting = new CastingService(_state);
-            _engine = new Engine(_state, _casting, _settings) { Addon = _addon };
+            _engine = new Engine(_state, _casting, _settings)
+            {
+                Addon = _addon,
+                PartyMemberSelections = _partySelections,
+            };
 
             _engine.RegisterModule(new CureModule(_state));
             _engine.RegisterModule(new CuragaModule(_state));
@@ -155,12 +163,11 @@ namespace CurePlease
             }
 
             UpdateActiveProfileLabel();
-            _settings.SettingsChanged += _ => Dispatcher.BeginInvoke(new Action(UpdatePauseButton));
-            UpdatePauseButton();
+            _settings.SettingsChanged += _ => Dispatcher.BeginInvoke(new Action(UpdateActionButton));
+            UpdateActionButton();
 
             _engine.Log += message => Dispatcher.BeginInvoke(new Action(() => AppendLog(message)));
-            _engine.ZonePauseChanged += paused => Dispatcher.BeginInvoke(new Action(() =>
-                StartButton.Content = paused ? "Resume" : (_engine.IsRunning ? "Stop" : "Start")));
+            _engine.ZonePauseChanged += paused => Dispatcher.BeginInvoke(new Action(UpdateActionButton));
             _engine.SnapshotReady += snapshot => Dispatcher.BeginInvoke(new Action(() =>
             {
                 if (snapshot != null)
@@ -182,10 +189,9 @@ namespace CurePlease
                 StatusText.Text = state.ToString();
                 _log.Information("Connection state: {State}{Error}", state,
                     state == ConnectionState.Lost && _state.LastError != null ? " (" + _state.LastError + ")" : string.Empty);
-                StartButton.IsEnabled = state == ConnectionState.Connected && !_engine.IsRunning;
                 JobInfoButton.Visibility = state == ConnectionState.Connected ? Visibility.Visible : Visibility.Collapsed;
-                AttachButton.Content = _state.IsAttached ? "Detach" : "Attach";
-                UpdatePauseButton();
+                UpdateAttachmentControls();
+                UpdateActionButton();
                 if (state == ConnectionState.Detached)
                 {
                     // Detach clears the tab identity; zoning/logout keep it.
@@ -248,9 +254,9 @@ namespace CurePlease
         // ----- shell-facing API -----
 
         /// <summary>Cast event routed from the shared addon listener (thread-safe — Interlocked inside).</summary>
-        public void NotifyCastEvent(CastEventKind kind)
+        public void NotifyCastEvent(CastEventKind kind, int spellId)
         {
-            _casting.NotifyCastEvent(kind);
+            _casting.NotifyCastEvent(kind, spellId);
         }
 
         /// <summary>Spell-landed report routed from the shared addon listener (bard song tracking).</summary>
@@ -322,6 +328,11 @@ namespace CurePlease
             RefreshProcessLists();
         }
 
+        private void MonitoredPidBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            UpdateAttachmentControls();
+        }
+
         private void AttachButton_Click(object sender, RoutedEventArgs e)
         {
             if (_state.IsAttached)
@@ -348,7 +359,8 @@ namespace CurePlease
                 _state.Attach(pl.Pid);
                 _claimedPlPid = pl.Pid;
                 _addonLoadPending = true; // fires on the first Connected state
-                _playerBuffs.Clear(); // session assignments belong to the previous party
+                _playerBuffs.Clear();
+            _partySelections.Clear(); // session assignments belong to the previous party
                 AppendLog("Attached to " + pl.DisplayName);
 
                 // Perpetuance multiplier pre-set from owned gear; a manual Scholar-page
@@ -363,21 +375,102 @@ namespace CurePlease
                     AppendLog("Perpetuance multiplier pre-set to " + detected.Multiplier.ToString("0.00")
                         + "x (found " + detected.Label + ")");
                 }
-
-                if (MonitoredPidBox.SelectedItem is GameProcessInfo monitored)
-                {
-                    _state.AttachMonitored(monitored.Pid);
-                    AppendLog("Monitored " + monitored.DisplayName);
-                }
-
-                StartButton.IsEnabled = true;
             }
             catch (Exception ex)
             {
+                _addonLoadPending = false;
+                _state.Detach();
                 _pids.Release(pl.Pid);
                 _claimedPlPid = 0;
                 AppendLog("Attach failed: " + ex.Message);
             }
+
+            UpdateAttachmentControls();
+            UpdateActionButton();
+        }
+
+        private void MonitoredAttachButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_state.IsAttached)
+            {
+                AppendLog("Attach the PL character first");
+                return;
+            }
+
+            int? selectedPid = (MonitoredPidBox.SelectedItem as GameProcessInfo)?.Pid;
+            try
+            {
+                if (_state.IsMonitoredAttached
+                    && (!selectedPid.HasValue || selectedPid.Value == _state.MonitoredProcessId))
+                {
+                    StopForAttachmentChange("monitored character detached");
+                    _state.DetachMonitored();
+                    AppendLog("Monitored character detached");
+                }
+                else if (selectedPid.HasValue)
+                {
+                    bool switching = _state.IsMonitoredAttached;
+                    if (switching)
+                    {
+                        StopForAttachmentChange("monitored character switched");
+                    }
+
+                    _state.AttachMonitored(selectedPid.Value);
+                    AppendLog((switching ? "Switched monitored character to " : "Monitored ")
+                        + ((GameProcessInfo)MonitoredPidBox.SelectedItem).DisplayName);
+                }
+                else
+                {
+                    AppendLog("Select a monitored character first");
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendLog("Monitored attach failed: " + ex.Message);
+            }
+
+            UpdateAttachmentControls();
+        }
+
+        private void StopForAttachmentChange(string reason)
+        {
+            if (_attachmentStopHandled)
+            {
+                return;
+            }
+
+            _attachmentStopHandled = true;
+            if (_engine.IsRunning)
+            {
+                _engine.Stop();
+                AppendLog("Engine stopped: " + reason);
+            }
+        }
+
+        private void UpdateAttachmentControls()
+        {
+            bool plAttached = _state.IsAttached;
+            bool monitoredAttached = _state.IsMonitoredAttached;
+            if (plAttached && monitoredAttached)
+            {
+                _attachmentStopHandled = false;
+            }
+            else
+            {
+                StopForAttachmentChange("both PL and monitored characters must be attached");
+            }
+
+            AttachButton.Content = plAttached ? "Detach" : "Attach";
+            PlPidBox.IsEnabled = !plAttached;
+
+            int monitoredPid = _state.MonitoredProcessId;
+            int? selectedPid = (MonitoredPidBox.SelectedItem as GameProcessInfo)?.Pid;
+            MonitoredAttachButton.Content = monitoredAttached
+                ? !selectedPid.HasValue || selectedPid.Value == monitoredPid ? "Detach" : "Switch"
+                : "Attach";
+            MonitoredAttachButton.IsEnabled = plAttached && (monitoredAttached || selectedPid.HasValue);
+            MonitoredStatusText.Text = monitoredAttached ? "Attached (PID " + monitoredPid + ")" : "Detached";
+            UpdateActionButton();
         }
 
         /// <summary>
@@ -388,11 +481,7 @@ namespace CurePlease
         /// </summary>
         private void DetachFromGame()
         {
-            if (_engine.IsRunning)
-            {
-                _engine.Stop();
-                StartButton.Content = "Start";
-            }
+            StopForAttachmentChange("PL character detached");
 
             if (_state.SendCommand("//lua unload CurePlease3"))
             {
@@ -408,6 +497,9 @@ namespace CurePlease
             }
 
             _playerBuffs.Clear();
+            _partySelections.Clear();
+            UpdateAttachmentControls();
+            UpdateActionButton();
             AppendLog("Detached");
         }
 
@@ -477,10 +569,47 @@ namespace CurePlease
             }
         }
 
-        private void PauseButton_Click(object sender, RoutedEventArgs e)
+        private void StartButton_Click(object sender, RoutedEventArgs e)
         {
+            if (!_state.IsAttached || !_state.IsMonitoredAttached || _state.State != ConnectionState.Connected)
+            {
+                AppendLog("Attach both PL and monitored characters, and wait for the PL to connect, before starting");
+                UpdateActionButton();
+                return;
+            }
+
+            bool resuming = _settings.Current.General.PauseActions || _engine.PausedByZone;
+            if (!_engine.IsRunning)
+            {
+                SetActionsPaused(false);
+                _engine.ResumeFromZone();
+                _engine.Start();
+                AppendLog(resuming ? "Engine started (actions resumed)" : "Engine started");
+            }
+            else if (resuming)
+            {
+                SetActionsPaused(false);
+                _engine.ResumeFromZone();
+                AppendLog("All actions resumed");
+            }
+            else
+            {
+                SetActionsPaused(true);
+                AppendLog("All actions paused");
+            }
+
+            UpdateActionButton();
+        }
+
+        private void SetActionsPaused(bool paused)
+        {
+            if (_settings.Current.General.PauseActions == paused)
+            {
+                return;
+            }
+
             CurePleaseSettings updated = _settings.Current.DeepClone();
-            updated.General.PauseActions = !updated.General.PauseActions;
+            updated.General.PauseActions = paused;
             _settings.Adopt(updated);
 
             if (!_profiles.SaveActive() && !_profiles.SaveAs(ProfileService.DefaultProfileName))
@@ -489,35 +618,13 @@ namespace CurePlease
             }
 
             UpdateActiveProfileLabel();
-            AppendLog(updated.General.PauseActions ? "All actions paused" : "All actions resumed");
-        }
-
-        private void StartButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (_engine.PausedByZone)
-            {
-                _engine.ResumeFromZone(); // ZonePauseChanged restores the Stop label
-                return;
-            }
-
-            if (_engine.IsRunning)
-            {
-                _engine.Stop();
-                StartButton.Content = "Start";
-            }
-            else
-            {
-                _engine.Start();
-                StartButton.Content = "Stop";
-            }
-
-            UpdatePauseButton();
         }
 
         // ----- snapshot display -----
 
         private void UpdateSnapshot(GameSnapshot snapshot)
         {
+            UpdateAttachmentControls();
             if (snapshot == null)
             {
                 JobStatsText.Text = string.Empty;
@@ -552,7 +659,7 @@ namespace CurePlease
                 .GroupBy(m => m.ServerId) // stale duplicate slots can carry the same character twice
                 .Select(g => g.First())
                 .OrderBy(m => m.MemberNumber)
-                .Select(m => new PartyRow(m, pl.Name, _playerBuffs, followTarget))
+                .Select(m => new PartyRow(m, pl.Name, _playerBuffs, _partySelections, followTarget))
                 .ToList();
         }
 
@@ -764,22 +871,30 @@ namespace CurePlease
                 : null;
         }
 
-        private void UpdatePauseButton()
+        private void UpdateActionButton()
         {
-            bool paused = _settings.Current.General.PauseActions;
-            PauseButton.Content = paused ? "Resume" : "Pause";
-            PauseButton.Foreground = paused
+            bool plAttached = _state.IsAttached;
+            bool monitoredAttached = _state.IsMonitoredAttached;
+            bool running = plAttached && monitoredAttached && _engine.IsRunning;
+            bool paused = running && (_settings.Current.General.PauseActions || _engine.PausedByZone);
+            StartButton.Content = !running ? "Start" : paused ? "Resume" : "Pause";
+            StartButton.Foreground = paused
                 ? System.Windows.Media.Brushes.Red
                 : System.Windows.SystemColors.ControlTextBrush;
-
-            // Pausing only means something while a live engine is making decisions.
-            bool active = _state.State == ConnectionState.Connected && _engine.IsRunning;
-            PauseButton.IsEnabled = active;
-            PauseButton.ToolTip = !active
-                ? "Attach to a character and press Start first."
-                : paused
-                    ? "Resume all actions."
-                    : "Pause all new actions without stopping status and party updates.";
+            StartButton.IsEnabled = plAttached && monitoredAttached && _state.State == ConnectionState.Connected;
+            StartButton.ToolTip = !plAttached
+                ? "Attach a PL character first."
+                : !monitoredAttached
+                    ? "Attach a monitored character before starting or resuming."
+                    : _state.State != ConnectionState.Connected
+                        ? "Wait for the PL character to connect before starting or resuming."
+                        : !running
+                            ? "Start the decision engine with actions resumed. Either detach stops it."
+                            : _engine.PausedByZone
+                                ? "Resume actions after zoning."
+                                : paused
+                                    ? "Resume all actions."
+                                    : "Pause new actions while status and party updates continue. Either detach stops the engine.";
         }
 
         private void AppendLog(string message)
@@ -794,8 +909,16 @@ namespace CurePlease
 
         private sealed class PartyRow
         {
-            public PartyRow(PartyMemberState m, string plName, PlayerBuffAssignments assignments, string followTargetName)
+            private readonly PartyMemberSelections _selections;
+
+            public PartyRow(
+                PartyMemberState m,
+                string plName,
+                PlayerBuffAssignments assignments,
+                PartyMemberSelections selections,
+                string followTargetName)
             {
+                _selections = selections;
                 MemberNumber = m.MemberNumber;
                 PartyDisplay = "P" + (m.PartyIndex + 1);
                 Name = m.Name;
@@ -827,6 +950,11 @@ namespace CurePlease
             public byte MemberNumber { get; }
             public string PartyDisplay { get; }
             public string Name { get; }
+            public bool IsSelected
+            {
+                get => _selections.IsEnabled(Name);
+                set => _selections.SetEnabled(Name, value);
+            }
             public bool IsSelf { get; }
             public bool CanFollow { get; }
             public bool IsFollowTarget { get; }

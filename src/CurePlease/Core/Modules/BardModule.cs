@@ -16,8 +16,10 @@ namespace CurePlease.Core.Modules
     ///    handles expiry/dispel; the overwrite-lowest-duration and overwrite-same rules
     ///    make re-singing always safe.
     ///  - Detection is presence-based, not timer-based: the bard's own buffs come from
-    ///    memory every tick, party members from the addon. Duration estimates are only
-    ///    used to refresh BEFORE a song wears (no gap), never as the sole source of truth.
+    ///    memory every tick, party members from the addon. Exact remaining times from
+    ///    local 0x63 packets drive PL refreshes when available; configured duration
+    ///    estimates are the fallback for other recipients. Estimates only refresh
+    ///    BEFORE a song wears (no gap), never as the sole source of truth.
     ///  - JA sequencing is verified: a prep JA (Nightingale/Troubadour/Marcato/Clarion
     ///    Call/Pianissimo) is offered, then the dependent song is held until the JA buff
     ///    is actually visible on the PL — legacy flaw 2.11 (blind 1.5 s JA wait) is not
@@ -425,8 +427,9 @@ namespace CurePlease.Core.Modules
         /// Returns null when everything is up and fresh. A member missing the song
         /// triggers a re-sing too — AnyMemberMissingFamily applies the range gate.
         /// During a cold-start pass the walk is POSITIONAL (first rotation song not
-        /// yet sung this pass) so the configured order is honored exactly — the
-        /// family-deficit view would let a later same-family song jump the queue.
+        /// yet sung or observed this pass) so the configured order is honored exactly —
+        /// observed buffs prove progress when an outcome packet was lost, and the
+        /// family-deficit view would otherwise let a later same-family song jump the queue.
         /// </summary>
         private string FindNeededSong(
             GameSnapshot snapshot,
@@ -442,6 +445,7 @@ namespace CurePlease.Core.Modules
 
             if (_coldStartPass)
             {
+                var familyOrdinal = new Dictionary<StatusEffect, int>();
                 for (int i = 0; i < rotation.Count; i++)
                 {
                     // A session-disabled song (3 genuine failures) must not freeze the
@@ -451,6 +455,10 @@ namespace CurePlease.Core.Modules
                     {
                         continue;
                     }
+
+                    StatusEffect family = FamilyOf(rotation[i]);
+                    int ordinal = familyOrdinal.TryGetValue(family, out int previous) ? previous + 1 : 1;
+                    familyOrdinal[family] = ordinal;
 
                     bool tracked = false;
                     foreach (SungSong s in sung)
@@ -462,7 +470,10 @@ namespace CurePlease.Core.Modules
                         }
                     }
 
-                    if (!tracked)
+                    // A lost outcome packet must not freeze the rotation: the live buff
+                    // list also proves that this family slot was filled. Same-family
+                    // songs are counted positionally (Minuet IV before Minuet V, etc.).
+                    if (!tracked && CountFamily(pl.Buffs, family) < ordinal)
                     {
                         missingIndex = i;
                         return rotation[i];
@@ -521,7 +532,7 @@ namespace CurePlease.Core.Modules
                 }
 
                 // All present: refresh the tracked song closest to expiry when inside the margin.
-                SungSong expiring = EarliestExpiring(sung, rotation, family, bard.RefreshMarginSeconds);
+                SungSong expiring = EarliestExpiring(snapshot, "<me>", sung, rotation, family, bard.RefreshMarginSeconds);
                 if (expiring != null && Offerable(expiring.Name))
                 {
                     missingIndex = i;
@@ -548,6 +559,11 @@ namespace CurePlease.Core.Modules
 
                 string songName = pair.Song.Trim();
                 string targetName = pair.Target.Trim();
+                if (!snapshot.PartyMemberSelections.IsEnabled(targetName))
+                {
+                    continue;
+                }
+
                 StatusEffect family = FamilyOf(songName);
                 if (family == 0)
                 {
@@ -568,7 +584,7 @@ namespace CurePlease.Core.Modules
                 SungSong expiring = null;
                 if (observed >= 1)
                 {
-                    expiring = EarliestExpiring(sung, new List<string> { songName }, family, bard.RefreshMarginSeconds);
+                    expiring = EarliestExpiring(snapshot, targetName, sung, new List<string> { songName }, family, bard.RefreshMarginSeconds);
                     if (expiring == null)
                     {
                         continue; // present and fresh
@@ -784,11 +800,12 @@ namespace CurePlease.Core.Modules
 
             if (!result.Succeeded)
             {
-                if (result.Outcome == CastOutcome.NotStarted || result.Outcome == CastOutcome.Interrupted)
+                if (result.Outcome == CastOutcome.NotStarted || result.Outcome == CastOutcome.Interrupted
+                    || result.Outcome == CastOutcome.Unknown)
                 {
-                    // Transient: the game rejected the command (a cast was still in
-                    // progress) or the song was interrupted by movement — retry soon
-                    // instead of striking the song toward session-disable.
+                    // Transient: the game rejected the command, the song was interrupted,
+                    // or no matching completion arrived. Live buffs/recasts reconcile
+                    // an Unknown result without striking the song toward session-disable.
                     _lastAttempt.Remove(key);
                     _shortRetry[key] = DateTime.UtcNow;
                     return;
@@ -1086,7 +1103,13 @@ namespace CurePlease.Core.Modules
             return null;
         }
 
-        private SungSong EarliestExpiring(List<SungSong> sung, List<string> rotation, StatusEffect family, double marginSeconds)
+        private SungSong EarliestExpiring(
+            GameSnapshot snapshot,
+            string scope,
+            List<SungSong> sung,
+            List<string> rotation,
+            StatusEffect family,
+            double marginSeconds)
         {
             SungSong earliest = null;
             foreach (SungSong s in sung)
@@ -1097,6 +1120,23 @@ namespace CurePlease.Core.Modules
                 }
 
                 double remaining = (s.LandedUtc.AddSeconds(s.DurationSeconds) - DateTime.UtcNow).TotalSeconds;
+                if (scope == "<me>")
+                {
+                    int? exact = null;
+                    foreach (BuffTimeRemaining buff in snapshot.PlayerBuffTimes)
+                    {
+                        if (buff.BuffId == (short)family && (!exact.HasValue || buff.Seconds < exact.Value))
+                        {
+                            exact = buff.Seconds;
+                        }
+                    }
+
+                    if (exact.HasValue)
+                    {
+                        remaining = exact.Value;
+                    }
+                }
+
                 if (remaining < marginSeconds && (earliest == null || s.LandedUtc < earliest.LandedUtc))
                 {
                     earliest = s;
@@ -1397,9 +1437,15 @@ namespace CurePlease.Core.Modules
 
         private bool AnyMemberMissingFamily(GameSnapshot snapshot, PlayerState pl, BardSettings bard, StatusEffect family, int configuredCount)
         {
+            if (snapshot.PartyFromMonitored)
+            {
+                return false;
+            }
+
             foreach (PartyMemberState member in snapshot.PartyMembers)
             {
-                if (!member.Active || member.CurrentHP == 0 || member.Zone != pl.ZoneId)
+                if (!member.Active || member.CurrentHP == 0 || member.Zone != pl.ZoneId
+                    || !snapshot.PartyMemberSelections.IsEnabled(member.Name))
                 {
                     continue;
                 }

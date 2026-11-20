@@ -10,10 +10,34 @@ Full rewrite of legacy CurePlease 2.0.4.4 (WinForms/.NET 4.8) as a WPF app on
 .NET 10, driven by FFXI.Memory.
 
 ### Priority fixes (uncommitted)
+- Pianissimo's song picker now lists beneficial songs only, excluding Requiem,
+  Elegy, Threnody, Lullaby, Virelai, and Magic Finale.
+- Settings now has an existing-profile dropdown that reloads every editor page,
+  with unsaved-change confirmation and failed-load state preservation.
+- Party rows gain legacy-style enable checkboxes (checked by default); unchecked
+  members are excluded from targeted support and AoE recovery trigger counts.
+- Cast outcomes now come exclusively from spell-correlated action packets,
+  never the cast bar; missing completions return Unknown and use live
+  buffs/recasts plus a short retry rather than a genuine-failure strike.
+  BRD no longer waits ~11 s on stale fast-cast bar progress between songs.
+  A configurable Bard grace period controls post-completion song spacing.
+  Cold-start rotations also advance from observed buffs when outcome packets
+  are lost, so remaining real songs overwrite dummies instead of stalling.
+- PL song refresh reads exact remaining times directly from the client's buff
+  memory block, with the CurePlease3 0x63 feed as fallback; other recipients retain
+  configurable landing-time estimates.
+- PL and monitored processes now have independent Attach/Switch/Detach rows;
+  the large right-hand Start/Pause/Resume button requires both attachments, and
+  either detach or a monitored switch stops the engine. Start always resumes saved
+  and zone pauses. A draggable splitter resizes the party grid and log.
+- An out-of-party PL can display and single-target cure the monitored client's
+  party, matching legacy cross-client behavior. An opt-in also allows Accession
+  party cures through an injured monitored-party target; native AoEs stay blocked.
 - BRD NiTro now continues with Troubadour alone when Nightingale is unavailable.
 - Debuff removal skips out-of-range targets and backs off failed casts instead of
   repeatedly winning the action queue.
-- A monitored client exiting now detaches monitoring without stopping the PL engine.
+- A monitored client exiting detaches monitoring and stops the engine until both
+  characters are attached and Start is pressed again.
 - Corrupt/unreadable profiles no longer activate or report a successful switch.
 - Legacy import honors singing/debuff master switches and no longer restores
   default removals when the legacy configuration had none selected.
@@ -41,7 +65,8 @@ Full rewrite of legacy CurePlease 2.0.4.4 (WinForms/.NET 4.8) as a WPF app on
 
 ### Review hardening (uncommitted)
 - Window close now uses cancel-then-close: tab shutdown (engine stop, addon unload,
-  PID release) always completes before the process exits.
+  PID release) always completes before the process exits. The final Close is queued
+  through the dispatcher so synchronous cleanup cannot nest WPF close operations.
 - Engine lifecycle: Start chains onto a still-unwinding previous loop instead of
   silently no-op'ing; StopAsync disposes the CTS safely; module registration is
   rejected while running; zone-pause flag is volatile.
@@ -58,9 +83,9 @@ Full rewrite of legacy CurePlease 2.0.4.4 (WinForms/.NET 4.8) as a WPF app on
 ### Core engine
 - Single decision loop with one immutable GameSnapshot per tick; modules offer
   scored candidates, highest score wins, every decision logged.
-- CastingService: awaitable cast state machine with guaranteed unlock; cast-bar
-  watcher with live-verified fast-cast semantics; stray addon "blocked" events are
-  reconciled against the bar before being believed; post-JA/item lockout delays.
+- CastingService: awaitable cast state machine with guaranteed unlock;
+  spell-correlated addon action events determine outcomes without the cast bar;
+  unresolved completions reconcile through live buffs/recasts; post-JA/item lockout delays.
 - Incapacitation gates per tick (sleep/stun/terror/charm/petrify block all;
   silence/mute/Omerta block spells; amnesia/impairment block JAs).
 - StratagemIntents: engine-owned claim registry so prep JAs (Accession, Divine

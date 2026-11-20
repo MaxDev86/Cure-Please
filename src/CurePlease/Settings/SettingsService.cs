@@ -173,6 +173,16 @@ namespace CurePlease.Settings
             // after the profile was written.
             settings.Buffs.EnsureSeeded();
             settings.Curaga.RequiredMembers = Math.Max(1, settings.Curaga.RequiredMembers);
+            if (double.IsNaN(settings.Bard.SongGracePeriodSeconds)
+                || double.IsInfinity(settings.Bard.SongGracePeriodSeconds)
+                || settings.Bard.SongGracePeriodSeconds < 0)
+            {
+                settings.Bard.SongGracePeriodSeconds = 0.4;
+            }
+            else
+            {
+                settings.Bard.SongGracePeriodSeconds = Math.Round(settings.Bard.SongGracePeriodSeconds, 2);
+            }
 
             // Future: if (settings.Version < 2) { ... settings.Version = 2; }
         }

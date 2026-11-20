@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -11,9 +12,11 @@ namespace CurePlease.Core
 {
     public enum CastEventKind
     {
+        Started,
         Finished,
         Interrupted,
         Blocked,
+        Rejected,
     }
 
     /// <summary>
@@ -23,8 +26,12 @@ namespace CurePlease.Core
     ///
     /// Protocol (port 19771 by default; legacy addon used 19769):
     ///   CUREPLEASE_buffs_&lt;Name&gt;_&lt;id1,id2,...&gt;   full buff list for a party member
+    ///   CUREPLEASE_bufftimes_&lt;Name&gt;_&lt;id:seconds,...&gt;
+    ///                                                     local buff remaining times (0x063)
     ///   CUREPLEASE_confirmed_&lt;CharName&gt;               v2 handshake reply to //cp3 verify
     ///   CUREPLEASE_confirmed                            legacy handshake (no sender name)
+    ///   CUREPLEASE_casting3_&lt;CharName&gt;_&lt;spellId&gt;_&lt;outcome&gt;
+    ///                                                     spell-correlated cast events (0x028)
     ///   CUREPLEASE_casting2_&lt;CharName&gt;_finished|interrupted|blocked
     ///                                                     v2 cast outcome events, name-keyed so
     ///                                                     multiple game instances don't cross-talk
@@ -42,6 +49,12 @@ namespace CurePlease.Core
             public DateTime LastSeenUtc;
         }
 
+        private sealed class BuffTimeEntry
+        {
+            public BuffTimeRemaining[] Buffs;
+            public DateTime LastSeenUtc;
+        }
+
         /// <summary>
         /// Cap on name-keyed dictionaries (_buffs, _handshakesByName). The port is
         /// loopback-only, but any local process can send packets — a flood of random
@@ -53,17 +66,18 @@ namespace CurePlease.Core
         private readonly ConcurrentDictionary<string, BuffEntry> _buffs =
             new ConcurrentDictionary<string, BuffEntry>(StringComparer.OrdinalIgnoreCase);
 
+        private readonly ConcurrentDictionary<string, BuffTimeEntry> _buffTimes =
+            new ConcurrentDictionary<string, BuffTimeEntry>(StringComparer.OrdinalIgnoreCase);
+
         private UdpClient _udp;
         private CancellationTokenSource _cts;
         private Task _loop;
 
         /// <summary>
-        /// Fires on cast outcome events from the addon. The string is the casting
-        /// character's name (v2 name-keyed messages), or null for legacy anonymous
-        /// messages — callers driving one attachment should ignore events that name
-        /// a different character.
+        /// Fires on cast outcome events from the addon: caster name (null for legacy
+        /// anonymous messages), spell id (0 for legacy casting2), and outcome kind.
         /// </summary>
-        public event Action<string, CastEventKind> CastEvent;
+        public event Action<string, int, CastEventKind> CastEvent;
 
         /// <summary>
         /// Fires when the addon reports a finished action's landing (0x028): caster name
@@ -170,6 +184,42 @@ namespace CurePlease.Core
             return result;
         }
 
+        /// <summary>
+        /// Returns the named local player's buff remaining times, aged down from the
+        /// packet's arrival time. Reports remain valid until their longest initial
+        /// duration plus the stale grace has elapsed; 0x063 arrives on buff changes,
+        /// not at a steady heartbeat.
+        /// </summary>
+        public BuffTimeRemaining[] GetBuffTimeSnapshot(string characterName, TimeSpan staleAfter)
+        {
+            if (characterName == null || !_buffTimes.TryGetValue(characterName, out BuffTimeEntry entry))
+            {
+                return Array.Empty<BuffTimeRemaining>();
+            }
+
+            DateTime now = DateTime.UtcNow;
+            int longest = entry.Buffs.Length == 0 ? 0 : entry.Buffs.Max(b => b.Seconds);
+            if (entry.LastSeenUtc.AddSeconds(longest) < now - staleAfter)
+            {
+                _buffTimes.TryRemove(characterName, out _);
+                return Array.Empty<BuffTimeRemaining>();
+            }
+
+            int elapsed = Math.Max(0, (int)(now - entry.LastSeenUtc).TotalSeconds);
+            var result = new BuffTimeRemaining[entry.Buffs.Length];
+            for (int i = 0; i < entry.Buffs.Length; i++)
+            {
+                BuffTimeRemaining buff = entry.Buffs[i];
+                result[i] = new BuffTimeRemaining
+                {
+                    BuffId = buff.BuffId,
+                    Seconds = Math.Max(0, buff.Seconds - elapsed),
+                };
+            }
+
+            return result;
+        }
+
         private async Task ReceiveLoop(CancellationToken ct)
         {
             while (!ct.IsCancellationRequested)
@@ -226,15 +276,22 @@ namespace CurePlease.Core
                 return;
             }
 
-            if (TryParseCastEvent(message, out string caster, out CastEventKind kind))
+            if (TryParseCastEvent(message, out string caster, out int castEventSpellId, out CastEventKind kind))
             {
-                CastEvent?.Invoke(caster, kind);
+                CastEvent?.Invoke(caster, castEventSpellId, kind);
                 return;
             }
 
             if (TryParseActionMessage(message, out string actor, out int spellId, out string[] recipients))
             {
                 SpellLanded?.Invoke(actor, spellId, recipients);
+                return;
+            }
+
+            if (TryParseBuffTimeMessage(message, out string timedName, out BuffTimeRemaining[] timedBuffs)
+                && (_buffTimes.Count < MaxTrackedNames || _buffTimes.ContainsKey(timedName)))
+            {
+                _buffTimes[timedName] = new BuffTimeEntry { Buffs = timedBuffs, LastSeenUtc = DateTime.UtcNow };
                 return;
             }
 
@@ -274,18 +331,48 @@ namespace CurePlease.Core
         }
 
         /// <summary>
-        /// Parses cast outcome events: CUREPLEASE_casting2_&lt;Name&gt;_&lt;outcome&gt; (v2,
-        /// name-keyed) and CUREPLEASE_casting_&lt;outcome&gt; (legacy; caster null).
-        /// Public and static so the format can be verified without a live socket.
+        /// Parses spell-correlated casting3 and legacy casting2/casting events.
+        /// The casting3 form is CUREPLEASE_casting3_&lt;Name&gt;_&lt;spellId&gt;_&lt;outcome&gt;.
         /// </summary>
         public static bool TryParseCastEvent(string message, out string caster, out CastEventKind kind)
         {
-            caster = null;
-            kind = default;
+            return TryParseCastEvent(message, out caster, out _, out kind);
+        }
 
+        public static bool TryParseCastEvent(
+            string message, out string caster, out int spellId, out CastEventKind kind)
+        {
+            caster = null;
+            spellId = 0;
+            kind = default;
             if (message == null)
             {
                 return false;
+            }
+
+            const string v3Prefix = "CUREPLEASE_casting3_";
+            if (message.StartsWith(v3Prefix, StringComparison.Ordinal))
+            {
+                int casterEnd = message.IndexOf('_', v3Prefix.Length);
+                if (casterEnd <= v3Prefix.Length)
+                {
+                    return false;
+                }
+
+                int separator = message.LastIndexOf('_');
+                if (separator <= casterEnd + 1 || separator == message.Length - 1)
+                {
+                    return false;
+                }
+
+                if (!int.TryParse(message.Substring(casterEnd + 1, separator - casterEnd - 1), out spellId)
+                    || !TryParseOutcome(message.Substring(separator + 1), out kind))
+                {
+                    return false;
+                }
+
+                caster = message.Substring(v3Prefix.Length, casterEnd - v3Prefix.Length);
+                return true;
             }
 
             const string v2Prefix = "CUREPLEASE_casting2_";
@@ -319,9 +406,11 @@ namespace CurePlease.Core
         {
             switch (outcome)
             {
+                case "started": kind = CastEventKind.Started; return true;
                 case "finished": kind = CastEventKind.Finished; return true;
                 case "interrupted": kind = CastEventKind.Interrupted; return true;
                 case "blocked": kind = CastEventKind.Blocked; return true;
+                case "rejected": kind = CastEventKind.Rejected; return true;
                 default: kind = default; return false;
             }
         }
@@ -379,6 +468,55 @@ namespace CurePlease.Core
         public static bool TryParseActionMessage(string message, out int spellId, out string[] recipients)
         {
             return TryParseActionMessage(message, out _, out spellId, out recipients);
+        }
+
+        /// <summary>
+        /// Parses CUREPLEASE_bufftimes_&lt;Name&gt;_&lt;id:remainingSeconds,...&gt;.
+        /// Duplicate buff ids are retained because song families share status ids.
+        /// </summary>
+        public static bool TryParseBuffTimeMessage(
+            string message, out string name, out BuffTimeRemaining[] buffs)
+        {
+            name = null;
+            buffs = null;
+            const string prefix = "CUREPLEASE_bufftimes_";
+            if (message == null || !message.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            int separator = message.IndexOf('_', prefix.Length);
+            if (separator <= prefix.Length)
+            {
+                return false;
+            }
+
+            name = message.Substring(prefix.Length, separator - prefix.Length);
+            string list = message.Substring(separator + 1);
+            if (list.Length == 0)
+            {
+                buffs = Array.Empty<BuffTimeRemaining>();
+                return true;
+            }
+
+            string[] parts = list.Split(',');
+            var parsed = new List<BuffTimeRemaining>(parts.Length);
+            foreach (string part in parts)
+            {
+                string[] fields = part.Split(':');
+                if (fields.Length != 2
+                    || !short.TryParse(fields[0], out short id)
+                    || !int.TryParse(fields[1], out int seconds)
+                    || seconds < 0)
+                {
+                    return false;
+                }
+
+                parsed.Add(new BuffTimeRemaining { BuffId = id, Seconds = seconds });
+            }
+
+            buffs = parsed.ToArray();
+            return true;
         }
 
         /// <summary>

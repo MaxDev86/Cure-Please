@@ -398,6 +398,7 @@ namespace CurePlease.Settings
             }
 
             settings.Curaga.UseAccession = GetBool(values, "accessionCure", ref mapped);
+            settings.Curaga.UseAccessionOnMonitoredParty = settings.Curaga.UseAccession;
 
             // --- Report the rest as ignored ---
             result.MappedCount = mapped;

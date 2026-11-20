@@ -4,12 +4,12 @@ _addon.version = '2.0 Windower'
 _addon_description = 'Party buff reports, cast outcome events, and landing reports for CurePlease v3'
 _addon.commands = {'cp3'}
 
--- Protocol v2 (UDP, default 127.0.0.1:19771):
+-- Protocol v2/v3 (UDP, default 127.0.0.1:19771):
 --   CUREPLEASE_buffs_<Name>_<id1,id2,...>            own-party buff dump (from 0x076)
+--   CUREPLEASE_bufftimes_<Name>_<id:seconds,...>     local buff remaining times (from 0x63)
 --   CUREPLEASE_action2_<CharName>_<spellId>_<names>  caster-keyed landing report (who a cast hit)
---   CUREPLEASE_casting2_<CharName>_finished          cast outcome, name-keyed (multi-instance safe)
---   CUREPLEASE_casting2_<CharName>_interrupted
---   CUREPLEASE_casting2_<CharName>_blocked
+--   CUREPLEASE_casting3_<CharName>_<spellId>_started|finished|interrupted|rejected
+--   CUREPLEASE_casting2_<CharName>_finished|interrupted (legacy consumers)
 --   CUREPLEASE_confirmed_<CharName>                  handshake reply to //cp3 verify (name-keyed)
 --   CUREPLEASE_confirmed                             legacy handshake (kept for older apps)
 --   CUREPLEASE_chat_<Name>_<mode>_<color>_<text>     chat feed (port 19770, fixed)
@@ -35,6 +35,12 @@ local function player_name()
     return (player and player.name) or '?'
 end
 
+-- 0x63 timestamps use the same epoch conversion as Singer: buff_ts / 60 is
+-- seconds within the Vana'diel clock; this offset converts them to Unix time.
+local time = os.time()
+local vana_time = time - 1009810800
+local bufftime_offset = math.floor(time - (vana_time * 60 % 0x100000000) / 60)
+
 -- 0x076: party buff update — 5 member blocks, 48 bytes each.
 local function send_party_buffs(data)
     for k = 0, 4 do
@@ -58,9 +64,29 @@ local function send_party_buffs(data)
     end
 end
 
+-- 0x63 type 9: local buff ids and expiry timestamps. Unlike party packet
+-- 0x076, this preserves each slot's remaining time, including duplicate songs.
+local function send_local_buff_times(data)
+    local entries = {}
+    local now = os.time()
+    for n = 1, 32 do
+        local buff_id = data:unpack('H', n * 2 + 7)
+        local buff_ts = data:unpack('I', n * 4 + 69)
+        if buff_ts == 0 then
+            break
+        elseif buff_id ~= 255 then
+            local remaining = math.max(0, math.floor(buff_ts / 60 + bufftime_offset - now))
+            table.insert(entries, tostring(buff_id) .. ':' .. tostring(remaining))
+        end
+    end
+    send('CUREPLEASE_bufftimes_' .. player_name() .. '_' .. table.concat(entries, ','))
+end
+
 windower.register_event('incoming chunk', function(id, data)
     if id == 0x076 then
         send_party_buffs(data)
+    elseif id == 0x63 and data:byte(5) == 9 then
+        send_local_buff_times(data)
     end
 end)
 
@@ -132,13 +158,39 @@ windower.register_event('incoming text', function(a, b, c, d, e)
     send('CUREPLEASE_chat_' .. player_name() .. '_' .. tostring(mode) .. '_' .. tostring(color) .. '_' .. text, 19770)
 end)
 
+local function action_spell_id(data)
+    if data.category == 4 then
+        return data.param or 0
+    end
+
+    -- Begin/reject packets carry the spell in the target action, not in data.param.
+    if data.targets ~= nil then
+        for _, target in pairs(data.targets) do
+            if target.actions ~= nil then
+                for _, action in pairs(target.actions) do
+                    if action.param and action.param ~= 0 then
+                        return action.param
+                    end
+                end
+            end
+        end
+    end
+    return 0
+end
+
+local function send_cast_event(outcome, spell_id)
+    send('CUREPLEASE_casting3_' .. player_name() .. '_' .. tostring(spell_id or 0) .. '_' .. outcome)
+end
+
 -- Cast outcomes + per-target landing reports for the local player's actions.
 windower.register_event('action', function(data)
     if data.actor_id ~= windower.ffxi.get_player().id then return end
 
     if data.category == 4 then
         -- Spell cast completed.
-        send('CUREPLEASE_casting2_' .. player_name() .. '_finished')
+        local spell_id = action_spell_id(data)
+        send_cast_event('finished', spell_id)
+        send('CUREPLEASE_casting2_' .. player_name() .. '_finished') -- legacy consumers
 
         -- Per-target landing report: exactly who the cast hit (AoE coverage data).
         if data.targets ~= nil then
@@ -150,14 +202,18 @@ windower.register_event('action', function(data)
                 end
             end
             if #names > 0 then
-                send('CUREPLEASE_action2_' .. player_name() .. '_' .. tostring(data.param) .. '_' .. table.concat(names, ','))
+                send('CUREPLEASE_action2_' .. player_name() .. '_' .. tostring(spell_id) .. '_' .. table.concat(names, ','))
             end
         end
-    elseif data.category == 8 then
-        if data.param == 28787 then
-            send('CUREPLEASE_casting2_' .. player_name() .. '_interrupted')
-        elseif data.param == 24931 then
-            send('CUREPLEASE_casting2_' .. player_name() .. '_blocked')
+    elseif data.category == 8 or data.category == 9 then
+        local spell_id = action_spell_id(data)
+        if data.param == 24931 then
+            send_cast_event('started', spell_id)
+        elseif data.param == 28787 then
+            send_cast_event('interrupted', spell_id)
+            send('CUREPLEASE_casting2_' .. player_name() .. '_interrupted') -- legacy consumers
+        else
+            send_cast_event('rejected', spell_id)
         end
     end
 end)

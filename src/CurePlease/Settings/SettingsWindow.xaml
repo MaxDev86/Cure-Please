@@ -13,7 +13,11 @@
         <!-- Profile bar -->
         <StackPanel Orientation="Horizontal" Grid.Row="0" Margin="0,0,0,8">
             <TextBlock Text="Profile:" VerticalAlignment="Center" FontWeight="Bold"/>
-            <TextBlock x:Name="ProfileNameText" VerticalAlignment="Center" Margin="4,0,16,0"/>
+            <ComboBox x:Name="ProfileComboBox" Width="220" Margin="4,0,8,0"
+                      IsEditable="True" IsReadOnly="True" IsSynchronizedWithCurrentItem="False"
+                      DropDownOpened="ProfileComboBox_DropDownOpened"
+                      SelectionChanged="ProfileComboBox_SelectionChanged"
+                      ToolTip="Load an existing profile and refresh all settings"/>
             <TextBlock x:Name="ProfileHintText" VerticalAlignment="Center" Foreground="Gray"/>
             <Button Content="Save As…" Padding="8,0" Margin="12,0,0,0" VerticalAlignment="Center"
                     Click="SaveAs_Click" ToolTip="Save the current edits as a new profile and switch to it"/>

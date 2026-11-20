@@ -30,26 +30,54 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="180"/>
+            <RowDefinition Height="*" MinHeight="140"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="180" MinHeight="70"/>
         </Grid.RowDefinitions>
 
-        <!-- Attach bar -->
-        <StackPanel Orientation="Horizontal" Grid.Row="0" Margin="0,0,0,6">
-            <TextBlock Text="PL:" VerticalAlignment="Center"/>
-            <ComboBox x:Name="PlPidBox" Width="160" Margin="4,0,12,0"
+        <!-- Independent attachments on the left; the tall action button stays on the right. -->
+        <Grid Grid.Row="0" Margin="0,0,0,6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="240"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="200"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="PL:" VerticalAlignment="Center"/>
+            <ComboBox x:Name="PlPidBox" Grid.Row="0" Grid.Column="1" Margin="6,0,12,0"
                       IsSynchronizedWithCurrentItem="False" DropDownOpened="PidCombo_DropDownOpened"/>
-            <TextBlock Text="Monitored:" VerticalAlignment="Center"/>
-            <ComboBox x:Name="MonitoredPidBox" Width="160" Margin="4,0,12,0"
-                      IsSynchronizedWithCurrentItem="False" DropDownOpened="PidCombo_DropDownOpened"/>
-            <Button x:Name="AttachButton" Content="Attach" Width="80" Margin="0,0,8,0" Click="AttachButton_Click"/>
-            <Button x:Name="StartButton" Content="Start" Width="80" Margin="0,0,8,0" Click="StartButton_Click" IsEnabled="False"/>
-            <Button x:Name="PauseButton" Content="Pause" Width="80" Margin="0,0,8,0" Click="PauseButton_Click"
-                    ToolTip="Pause all new actions without stopping status and party updates."/>
-            <Button x:Name="ImportButton" Content="Import legacy…" Width="100" Margin="0,0,8,0" Click="ImportButton_Click"/>
-            <Button Content="Settings…" Width="80" Margin="0,0,8,0" Click="SettingsButton_Click"/>
-            <TextBlock x:Name="StatusText" Text="Detached" VerticalAlignment="Center" Margin="12,0,0,0" FontWeight="Bold"/>
-        </StackPanel>
+            <Button x:Name="AttachButton" Grid.Row="0" Grid.Column="2" Content="Attach" Width="80"
+                    Click="AttachButton_Click"
+                    ToolTip="Attach or detach the PL. Detaching stops the engine and disconnects the monitored character too."/>
+            <TextBlock x:Name="StatusText" Grid.Row="0" Grid.Column="3" Text="Detached"
+                       VerticalAlignment="Center" Margin="12,0,0,0" FontWeight="Bold"/>
+
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Monitored:" VerticalAlignment="Center" Margin="0,4,0,0"/>
+            <ComboBox x:Name="MonitoredPidBox" Grid.Row="1" Grid.Column="1" Margin="6,4,12,0"
+                      IsSynchronizedWithCurrentItem="False" DropDownOpened="PidCombo_DropDownOpened"
+                      SelectionChanged="MonitoredPidBox_SelectionChanged"/>
+            <Button x:Name="MonitoredAttachButton" Grid.Row="1" Grid.Column="2" Content="Attach" Width="80"
+                    Margin="0,4,0,0" Click="MonitoredAttachButton_Click" IsEnabled="False"
+                    ToolTip="Attach, switch, or detach the monitored character. Switching or detaching stops the engine until both characters are attached."/>
+            <TextBlock x:Name="MonitoredStatusText" Grid.Row="1" Grid.Column="3" Text="Detached"
+                       VerticalAlignment="Center" Margin="12,4,0,0" Foreground="Gray"/>
+
+            <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="5" Orientation="Horizontal" Margin="0,8,0,0">
+                <Button x:Name="ImportButton" Content="Import legacy…" Width="100" Margin="0,0,8,0" Click="ImportButton_Click"/>
+                <Button Content="Settings…" Width="80" Margin="0,0,8,0" Click="SettingsButton_Click"/>
+            </StackPanel>
+            <Button x:Name="StartButton" Grid.Row="0" Grid.RowSpan="3" Grid.Column="5"
+                    Content="Start" MinHeight="72" Margin="16,0,0,0" FontSize="16" FontWeight="SemiBold"
+                    Click="StartButton_Click" IsEnabled="False"/>
+        </Grid>
 
         <!-- Active profile + auto-switch preference (global, not per-profile) -->
         <StackPanel Orientation="Horizontal" Grid.Row="1" Margin="0,0,0,4">
@@ -88,6 +116,15 @@
             <DataGrid.Columns>
                 <DataGridTextColumn Header="Pt" Binding="{Binding PartyDisplay}" Width="30"/>
                 <DataGridTextColumn Header="#" Binding="{Binding MemberNumber}" Width="30"/>
+                <DataGridTemplateColumn Header="On" Width="34">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      ToolTip="Enable cures, buffs, debuff removal, and other supported actions for this character"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="120"/>
                 <DataGridTemplateColumn Header="HP" Width="135">
                     <DataGridTemplateColumn.CellTemplate>
@@ -135,8 +172,13 @@
             </DataGrid.Columns>
         </DataGrid>
 
+        <GridSplitter Grid.Row="4" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                      ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" ShowsPreview="True"
+                      Background="#FFE0E0E0" Cursor="SizeNS"
+                      ToolTip="Drag to resize the character grid and log"/>
+
         <!-- Engine log -->
-        <TextBox x:Name="LogBox" Grid.Row="4" IsReadOnly="True" VerticalScrollBarVisibility="Auto"
+        <TextBox x:Name="LogBox" Grid.Row="5" IsReadOnly="True" VerticalScrollBarVisibility="Auto"
                  FontFamily="Consolas" FontSize="11" TextWrapping="NoWrap"/>
     </Grid>
 </UserControl>

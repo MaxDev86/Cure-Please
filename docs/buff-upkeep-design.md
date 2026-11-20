@@ -201,6 +201,12 @@ Falls back to the Curaga line when no charge is free, White Grimoire is down,
 or no compatible cure is castable; while Accession is up a native Curaga is
 never fired. Reuses the Curaga threshold/member-count settings and scoring.
 
+A separate opt-in allows this path when the PL is outside the monitored party.
+The cure targets the lowest-HPP reachable member rather than `<me>`: Accession
+extends a compatible spell cast on an outside player to that target's party.
+Native Curaga has no cross-party fallback. Imported legacy `accessionCure`
+profiles enable this option to preserve their monitored-party behavior.
+
 Cure V/VI are not Accession-compatible (BG-wiki), so two guards keep the
 charge from being wasted: the party-heal cast resolves from
 `SpellBook.AccessionCureTierNames` (Cure IV down), and the single-target cure

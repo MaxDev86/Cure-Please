@@ -166,6 +166,13 @@ namespace CurePlease.Settings
         /// </summary>
         public bool UseAccession { get; set; }
 
+        /// <summary>
+        /// Allow the Accession party cure when the PL is outside the monitored
+        /// party. The Cure I–IV targets an injured member, extending to their party.
+        /// Requires <see cref="UseAccession"/>; native Curaga remains unavailable.
+        /// </summary>
+        public bool UseAccessionOnMonitoredParty { get; set; }
+
         /// <summary>Tier table, highest first: Curaga V .. Curaga.</summary>
         public List<CureTierSettings> Tiers { get; set; } = new List<CureTierSettings>
         {
@@ -394,11 +401,18 @@ namespace CurePlease.Settings
         /// <summary>Single-target top-ups via Pianissimo (5 s recast), e.g. Ballad on the tank.</summary>
         public List<PianissimoTarget> PianissimoTargets { get; set; } = new List<PianissimoTarget>();
 
-        /// <summary>Estimated party-song duration before modifiers the bot itself applied (Troubadour doubles).</summary>
+        /// <summary>
+        /// Fallback song duration before modifiers the bot itself applied (Troubadour
+        /// doubles). The PL's exact 0x63 remaining time wins whenever available;
+        /// this estimate covers other recipients and casts without timestamp data.
+        /// </summary>
         public double BaseDurationSeconds { get; set; } = 180;
 
-        /// <summary>Re-sing a tracked song when its estimated remaining time drops below this (overwrite-same is always safe).</summary>
+        /// <summary>Re-sing a tracked song when its exact or estimated remaining time drops below this (overwrite-same is always safe).</summary>
         public double RefreshMarginSeconds { get; set; } = 30;
+
+        /// <summary>Delay after a completed song before the engine can choose its next action.</summary>
+        public double SongGracePeriodSeconds { get; set; } = 0.4;
 
         /// <summary>AoE song reach with Horn; recipients beyond this are skipped (9.9 per the guide).</summary>
         public double SongRangeYalms { get; set; } = 9.9;

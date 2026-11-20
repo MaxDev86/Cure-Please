@@ -99,6 +99,9 @@ namespace CurePlease.Core
         /// <summary>Optional addon data provider; when set, party buffs are merged into each snapshot.</summary>
         public AddonListener Addon { get; set; }
 
+        /// <summary>Session-only per-character enable selections shared with the party UI.</summary>
+        public PartyMemberSelections PartyMemberSelections { get; set; } = new PartyMemberSelections();
+
         /// <summary>Floor for the inter-tick delay — a faster spin only burns CPU, the snapshot can't refresh sooner.</summary>
         private const int MinTickDelayMs = 50;
 
@@ -347,6 +350,7 @@ namespace CurePlease.Core
 
             _wasLoggedIn = true;
             _lastZoneId = snapshot.Player.ZoneId;
+            snapshot.PartyMemberSelections = PartyMemberSelections;
 
             SnapshotReady?.Invoke(snapshot);
 
@@ -367,8 +371,12 @@ namespace CurePlease.Core
                 }
 
                 roster.Add(snapshot.Player.Name);
-                snapshot.PartyBuffs = Addon.GetBuffSnapshot(
-                    TimeSpan.FromSeconds(settings.Addon.StaleSeconds), roster);
+                TimeSpan staleAfter = TimeSpan.FromSeconds(settings.Addon.StaleSeconds);
+                snapshot.PartyBuffs = Addon.GetBuffSnapshot(staleAfter, roster);
+                if (!snapshot.PlayerBuffTimesAvailable)
+                {
+                    snapshot.PlayerBuffTimes = Addon.GetBuffTimeSnapshot(snapshot.Player.Name, staleAfter);
+                }
             }
 
             bool paused = settings.General.PauseActions || _pausedByZone;
@@ -450,7 +458,10 @@ namespace CurePlease.Core
                 ? await _casting.UseItemAsync(best.ActionName, best.TargetName, ct).ConfigureAwait(false)
                 : best.IsJobAbility
                     ? await _casting.JobAbilityAsync(best.ActionName, best.TargetName, ct).ConfigureAwait(false)
-                    : await _casting.CastAsync(best.ActionName, best.TargetName, ct).ConfigureAwait(false);
+                    : await _casting.CastAsync(best.ActionName, best.TargetName, ct,
+                        best.Category == ActionCategory.Song
+                            ? TimeSpan.FromSeconds(settings.Bard.SongGracePeriodSeconds)
+                            : (TimeSpan?)null).ConfigureAwait(false);
 
             RaiseLog(string.Format("[{0:0.0}] {1} — {2}{3}", best.Score, best.Description, result.Outcome,
                 result.Detail.Length > 0 ? " (" + result.Detail + ")" : string.Empty));

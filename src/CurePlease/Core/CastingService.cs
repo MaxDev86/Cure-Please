@@ -7,17 +7,20 @@ namespace CurePlease.Core
 {
     public enum CastOutcome
     {
-        /// <summary>Cast bar reached completion.</summary>
+        /// <summary>The addon reported the completed action packet.</summary>
         Success,
 
-        /// <summary>Cast started but the bar dropped before completing (interrupted / moved / stunned).</summary>
+        /// <summary>The addon reported an interrupt (movement, stun, etc.).</summary>
         Interrupted,
 
-        /// <summary>The cast never started within the start window (recast, no MP, invalid target, silence).</summary>
+        /// <summary>The addon reported a reject with no subsequent finish (recast, no MP, invalid target, silence).</summary>
         NotStarted,
 
-        /// <summary>The cast bar stalled or ran past its expected duration.</summary>
+        /// <summary>No action-packet outcome arrived within the maximum wait.</summary>
         Timeout,
+
+        /// <summary>No completion arrived; live buffs and recasts must reconcile the result.</summary>
+        Unknown,
 
         /// <summary>Command could not be sent (detached / connection lost).</summary>
         SendFailed,
@@ -58,15 +61,7 @@ namespace CurePlease.Core
         /// <summary>Guarantees one cast in flight; released in finally on every path.</summary>
         private readonly SemaphoreSlim _castSlot = new SemaphoreSlim(1, 1);
 
-        private static readonly TimeSpan StartWindow = TimeSpan.FromSeconds(3);
         private static readonly TimeSpan MaxCastDuration = TimeSpan.FromSeconds(20);
-
-        /// <summary>
-        /// Bar unchanged this long means the cast completed mid-ramp (fast cast) or,
-        /// in WaitForCastBarIdle, that no cast is in progress (frozen leftover bar).
-        /// </summary>
-        private static readonly TimeSpan FcCompleteStall = TimeSpan.FromMilliseconds(750);
-
         private static readonly TimeSpan SettleDelay = TimeSpan.FromMilliseconds(400);
 
         /// <summary>
@@ -81,12 +76,9 @@ namespace CurePlease.Core
         private static readonly TimeSpan StationaryWindow = TimeSpan.FromSeconds(3);
 
         /// <summary>
-        /// A "blocked" (category 8 / 24931) event is only decisive when no cast ever
-        /// starts. When another addon (GearSwap re-issue) or a stale reject produces a
-        /// blocked event for a cast that IS going through, the reject races ahead of
-        /// the real cast — observed live: songs landing while logged NotStarted. Give
-        /// the bar / a Finished event this long to prove the blocked event was stray
-        /// before declaring NotStarted.
+        /// GearSwap duplicate commands can produce a blocked report immediately before
+        /// the real cast finishes. Allow a Finished packet this long to disprove the
+        /// reject before declaring NotStarted; no cast-bar input is consulted.
         /// </summary>
         private static readonly TimeSpan BlockedGrace = TimeSpan.FromMilliseconds(1500);
 
@@ -102,18 +94,22 @@ namespace CurePlease.Core
 
         /// <summary>
         /// Feeds an addon cast event into the state machine. Unlike legacy (two racing
-        /// unlock paths), this is just another input to the single WatchCastBar loop —
+        /// unlock paths), this is just another input to the single WatchCastEvents loop —
         /// the cast slot is still released exactly once, in finally.
         /// </summary>
-        public void NotifyCastEvent(CastEventKind kind)
+        private int _addonCastEventSpellId;
+
+        public void NotifyCastEvent(CastEventKind kind, int spellId = 0)
         {
+            Interlocked.Exchange(ref _addonCastEventSpellId, spellId);
             Interlocked.Exchange(ref _addonCastEventRaw, (int)kind + 1);
         }
 
         /// <summary>Consumes the pending addon cast event, or null when none has arrived.</summary>
-        private CastEventKind? TakeAddonEvent()
+        private CastEventKind? TakeAddonEvent(out int spellId)
         {
             int raw = Interlocked.Exchange(ref _addonCastEventRaw, 0);
+            spellId = raw == 0 ? 0 : Interlocked.Exchange(ref _addonCastEventSpellId, 0);
             return raw == 0 ? (CastEventKind?)null : (CastEventKind)(raw - 1);
         }
 
@@ -124,7 +120,8 @@ namespace CurePlease.Core
         /// Sends /ma "spell" target and awaits the outcome.
         /// Returns as soon as the cast resolves; never blocks the caller's thread.
         /// </summary>
-        public async Task<CastResult> CastAsync(string spellName, string targetName, CancellationToken ct)
+        public async Task<CastResult> CastAsync(
+            string spellName, string targetName, CancellationToken ct, TimeSpan? successSettle = null)
         {
             CastResult result = new CastResult { SpellName = spellName, TargetName = targetName };
             Stopwatch sw = Stopwatch.StartNew();
@@ -132,8 +129,6 @@ namespace CurePlease.Core
             await _castSlot.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                await WaitForCastBarIdle(ct).ConfigureAwait(false);
-
                 // Movement interrupts casting — wait for the settle window rather
                 // than send a cast the server will eat.
                 if (!await WaitForStationary(ct).ConfigureAwait(false))
@@ -145,8 +140,8 @@ namespace CurePlease.Core
                 }
 
                 // Drop stale addon events as late as possible: anything that arrived
-                // during the idle/stationary waits belongs to someone else's cast,
-                // and clearing here keeps it from being misattributed to ours.
+                // during the stationary wait belongs to someone else's cast, and
+                // clearing here keeps it from being misattributed to ours.
                 Interlocked.Exchange(ref _addonCastEventRaw, 0);
 
                 if (!_state.SendCommand("/ma \"" + spellName + "\" " + targetName))
@@ -156,7 +151,7 @@ namespace CurePlease.Core
                     return result;
                 }
 
-                result.Outcome = await WatchCastBar(result, ct).ConfigureAwait(false);
+                result.Outcome = await WatchCastEvents(result, ct, successSettle).ConfigureAwait(false);
                 return result;
             }
             catch (OperationCanceledException)
@@ -253,47 +248,6 @@ namespace CurePlease.Core
         }
 
         /// <summary>
-        /// Waits until no cast is in progress before a command is sent — a previous
-        /// engine cast the watcher mis-detected, or a manual cast by the player (or
-        /// another tool). Firing into an active cast makes the game reject the command
-        /// with "Unable to cast spells at this time" (action category 8 / param 24931).
-        ///
-        /// Fast-cast semantics (live-verified with BRD fast-cast gear + NiTro): the
-        /// gauge ramps at the BASE cast time, so an adjusted cast completes mid-ramp
-        /// and the bar then FREEZES at that value (e.g. 0.25) until the next cast or
-        /// a slow idle reset. A frozen mid-ramp value therefore means "no cast in
-        /// progress" — a genuinely active cast moves every sample. Bounded so a
-        /// stuck bar can never deadlock the engine; a broken read (constant idle
-        /// value) degrades this to a no-op, matching prior behavior.
-        /// </summary>
-        private async Task WaitForCastBarIdle(CancellationToken ct)
-        {
-            Stopwatch wait = Stopwatch.StartNew();
-            float lastRatio = -1f;
-            Stopwatch stall = Stopwatch.StartNew();
-            while (wait.Elapsed < TimeSpan.FromSeconds(12))
-            {
-                float ratio = _state.GetCastBarPercent();
-                if (ratio < 0f || ratio >= 0.98f)
-                {
-                    return;
-                }
-
-                if (Math.Abs(ratio - lastRatio) > 0.001f)
-                {
-                    stall.Restart();
-                    lastRatio = ratio;
-                }
-                else if (stall.Elapsed > FcCompleteStall)
-                {
-                    return;
-                }
-
-                await Task.Delay(100, ct).ConfigureAwait(false);
-            }
-        }
-
-        /// <summary>
         /// Waits until the player has been stationary for <see cref="StationarySettle"/>,
         /// giving up after <see cref="StationaryWindow"/>. Polls the movement tracking
         /// in <see cref="GameStateService"/> (position deltas per snapshot tick).
@@ -315,161 +269,70 @@ namespace CurePlease.Core
         }
 
         /// <summary>
-        /// Polls the cast bar: waits for the cast to start, then for completion.
-        /// The addon's 0x028 action events (checked first every iteration) are the
-        /// primary outcome authority; the bar is the fallback for when the addon is
-        /// not loaded. One exception: a Blocked event is reconciled against reality
-        /// before it is believed — a stray reject (GearSwap re-issue, duplicate
-        /// command) races ahead of the real cast, and trusting it blindly logged
-        /// NotStarted for songs that actually landed (live, 2025-11-14 run). Blocked
-        /// is ignored once the bar shows a cast in flight, and before a dip it gets a
-        /// <see cref="BlockedGrace"/> window for a dip/Finished to disprove it.
-        ///
-        /// Bar semantics (live-verified, BRD fast-cast gear + NiTro): 1.0 when idle;
-        /// ramps 0 -&gt; 1 at the BASE cast time while casting, so a fast-cast-adjusted
-        /// cast completes mid-ramp and the bar FREEZES there (e.g. 0.25) until the
-        /// next cast or a slow idle reset; a no-fast-cast finish passes through ~1.0;
-        /// an interrupt snaps back to 1.0 from mid-ramp. Outcome mapping: freeze
-        /// (stall) = completed, snap to 1.0 after reaching ~0.85 = completed,
-        /// snap to 1.0 before that with no preceding stall = interrupted.
+        /// Waits for spell-correlated 0x028 action events. The cast bar is NEVER used.
+        /// Started is only progress evidence, Finished is completion, and Rejected is
+        /// a failed start. A rejected report gets a short grace window because
+        /// GearSwap duplicate commands can produce a stray reject before the finish.
         /// </summary>
-        private async Task<CastOutcome> WatchCastBar(CastResult result, CancellationToken ct)
+        private async Task<CastOutcome> WatchCastEvents(
+            CastResult result, CancellationToken ct, TimeSpan? successSettle)
         {
             Stopwatch total = Stopwatch.StartNew();
-            bool started = false;
-            bool sawReadError = false;
-            bool strayBlocked = false;
             DateTime blockedAt = DateTime.MinValue;
-            float maxRatio = 0f;
-            float minRatio = 1f;
-            float lastRatio = 1f;
-            Stopwatch stall = Stopwatch.StartNew();
+            bool started = false;
+            var spell = _state.FindSpell(result.SpellName);
+            int expectedSpellId = spell != null
+                ? spell.Index
+                : result.SpellName.Equals("Honor March", StringComparison.OrdinalIgnoreCase) ? 417
+                : result.SpellName.Equals("Aria of Passion", StringComparison.OrdinalIgnoreCase) ? 418
+                : 0;
 
             while (total.Elapsed < MaxCastDuration)
             {
                 ct.ThrowIfCancellationRequested();
 
-                CastEventKind? addonEvent = TakeAddonEvent();
-                if (addonEvent == CastEventKind.Finished)
+                CastEventKind? addonEvent = TakeAddonEvent(out int eventSpellId);
+                if (addonEvent.HasValue
+                    && (expectedSpellId == 0 || eventSpellId == 0 || eventSpellId == expectedSpellId))
                 {
-                    if (strayBlocked)
+                    if (addonEvent == CastEventKind.Started)
                     {
-                        result.Detail = "addon reported blocked first, but the cast went through (stray reject — duplicate command?)";
+                        started = true;
                     }
-
-                    await Task.Delay(SettleDelay, ct).ConfigureAwait(false);
-                    return CastOutcome.Success;
-                }
-
-                if (addonEvent == CastEventKind.Interrupted)
-                {
-                    return CastOutcome.Interrupted;
-                }
-
-                if (addonEvent == CastEventKind.Blocked)
-                {
-                    if (started)
+                    else if (addonEvent == CastEventKind.Finished)
                     {
-                        // A cast is observably in flight — this reject belongs to a
-                        // duplicate/other command, not to ours. The real cast's
-                        // Finished event (or bar completion) decides the outcome.
-                        strayBlocked = true;
+                        if (blockedAt != DateTime.MinValue)
+                        {
+                            result.Detail = "addon reported rejected first, but the cast went through (stray reject — duplicate command?)";
+                        }
+
+                        await Task.Delay(successSettle ?? SettleDelay, ct).ConfigureAwait(false);
+                        return CastOutcome.Success;
                     }
-                    else if (blockedAt == DateTime.MinValue)
+                    else if (addonEvent == CastEventKind.Interrupted)
                     {
-                        // No cast started yet — possibly a genuine reject. Wait out the
-                        // grace window: if the bar dips or Finished arrives, the blocked
-                        // event was stray (GearSwap re-issue racing the real cast).
+                        return CastOutcome.Interrupted;
+                    }
+                    else if ((addonEvent == CastEventKind.Blocked || addonEvent == CastEventKind.Rejected)
+                        && blockedAt == DateTime.MinValue)
+                    {
                         blockedAt = DateTime.UtcNow;
                     }
                 }
 
-                float ratio = _state.GetCastBarPercent();
-                if (ratio < 0f)
+                if (blockedAt != DateTime.MinValue && DateTime.UtcNow - blockedAt > BlockedGrace)
                 {
-                    // Read error — hold state and try again next sample.
-                    sawReadError = true;
-                    await Task.Delay(50, ct).ConfigureAwait(false);
-                    continue;
-                }
-
-                if (!started)
-                {
-                    if (ratio < 0.98f)
-                    {
-                        // The dip below idle marks the cast actually starting.
-                        started = true;
-                        if (blockedAt != DateTime.MinValue)
-                        {
-                            strayBlocked = true;
-                            blockedAt = DateTime.MinValue;
-                        }
-
-                        maxRatio = ratio;
-                        lastRatio = ratio;
-                        stall.Restart();
-                    }
-                    else
-                    {
-                        if (ratio < minRatio)
-                        {
-                            minRatio = ratio;
-                        }
-
-                        if (blockedAt != DateTime.MinValue && DateTime.UtcNow - blockedAt > BlockedGrace)
-                        {
-                            result.Detail = "game rejected the command (addon blocked event; no cast started within "
-                                + BlockedGrace.TotalSeconds.ToString("0.0") + "s grace)";
-                            return CastOutcome.NotStarted;
-                        }
-
-                        if (total.Elapsed > StartWindow)
-                        {
-                            result.Detail = "no cast-bar dip in " + StartWindow.TotalSeconds.ToString("0")
-                                + "s (min ratio " + minRatio.ToString("0.00") + (sawReadError ? ", read errors seen" : "")
-                                + ") — cast either rejected silently or the bar read is broken";
-                            return CastOutcome.NotStarted;
-                        }
-                    }
-                }
-                else
-                {
-                    if (ratio > maxRatio)
-                    {
-                        maxRatio = ratio;
-                    }
-
-                    if (ratio >= 0.99f)
-                    {
-                        await Task.Delay(SettleDelay, ct).ConfigureAwait(false);
-                        return maxRatio >= 0.85f ? CastOutcome.Success : CastOutcome.Interrupted;
-                    }
-
-                    if (Math.Abs(ratio - lastRatio) > 0.001f)
-                    {
-                        stall.Restart();
-                        lastRatio = ratio;
-                    }
-                    else if (stall.Elapsed > FcCompleteStall)
-                    {
-                        // Fast-cast completion: the bar froze where the adjusted cast
-                        // finished. When the addon is loaded its 0x028 event (above)
-                        // normally wins the race; the freeze alone is still decisive —
-                        // an interrupted cast snaps back to 1.0 rather than freezing.
-                        result.Detail = "completed mid-ramp (fast cast; bar froze at "
-                            + lastRatio.ToString("0.00") + ")"
-                            + (strayBlocked ? "; stray addon blocked event ignored" : string.Empty);
-                        await Task.Delay(SettleDelay, ct).ConfigureAwait(false);
-                        return CastOutcome.Success;
-                    }
+                    result.Detail = "game rejected the command (addon rejected event; no finish within "
+                        + BlockedGrace.TotalSeconds.ToString("0.0") + "s grace)";
+                    return CastOutcome.NotStarted;
                 }
 
                 await Task.Delay(50, ct).ConfigureAwait(false);
             }
 
-            result.Detail = "cast bar never resolved within " + MaxCastDuration.TotalSeconds.ToString("0")
-                + "s (started=" + started + ", max ratio " + maxRatio.ToString("0.00") + ")";
-            return CastOutcome.Timeout;
+            result.Detail = "no matching action-packet outcome within " + MaxCastDuration.TotalSeconds.ToString("0")
+                + "s (started=" + started + "; addon missing, event lost, or cast unresolved)";
+            return CastOutcome.Unknown;
         }
     }
 }

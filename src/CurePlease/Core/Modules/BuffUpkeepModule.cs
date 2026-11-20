@@ -259,6 +259,11 @@ namespace CurePlease.Core.Modules
                 return; // self-only buff — no party coverage to repair
             }
 
+            if (snapshot.PartyFromMonitored)
+            {
+                return; // the PL cannot AoE a party they are not in
+            }
+
             if (snapshot.PartyBuffs.Count == 0)
             {
                 return; // no addon feed: members' buffs are invisible
@@ -283,6 +288,7 @@ namespace CurePlease.Core.Modules
             foreach (PartyMemberState member in snapshot.PartyMembers)
             {
                 if (!member.Active || member.PartyIndex != 0 || member.CurrentHP == 0
+                    || !snapshot.PartyMemberSelections.IsEnabled(member.Name)
                     || member.Zone != pl.ZoneId
                     || member.Name.Equals(pl.Name, StringComparison.OrdinalIgnoreCase))
                 {

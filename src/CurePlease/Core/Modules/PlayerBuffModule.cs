@@ -73,6 +73,11 @@ namespace CurePlease.Core.Modules
                     continue; // the PL is Buff Upkeep's target — one owner per buff
                 }
 
+                if (!snapshot.PartyMemberSelections.IsEnabled(memberName))
+                {
+                    continue;
+                }
+
                 PartyMemberState member = FindMember(snapshot, memberName, pl.ZoneId);
                 if (member == null)
                 {
