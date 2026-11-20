@@ -122,7 +122,8 @@
             <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
                 <CheckBox Content="Use Radial Arcana when MP at or below:"
                           IsChecked="{Binding UseRadialArcana, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center"/>
-                <TextBox Text="{Binding RadialArcanaMpBelow, UpdateSourceTrigger=PropertyChanged}" Width="70" Margin="8,0,0,0"/>
+                <TextBox Text="{Binding RadialArcanaMpBelow, UpdateSourceTrigger=PropertyChanged}" Width="70" Margin="8,0,0,0"
+                         ToolTip="Absolute MP, not a percentage. Consumes the luopan, which must be active and within 9 yalms."/>
             </StackPanel>
 
         </StackPanel>

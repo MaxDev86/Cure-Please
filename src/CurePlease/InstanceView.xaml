@@ -53,7 +53,8 @@
 
             <TextBlock Grid.Row="0" Grid.Column="0" Text="PL:" VerticalAlignment="Center"/>
             <ComboBox x:Name="PlPidBox" Grid.Row="0" Grid.Column="1" Margin="6,0,12,0"
-                      IsSynchronizedWithCurrentItem="False" DropDownOpened="PidCombo_DropDownOpened"/>
+                      IsSynchronizedWithCurrentItem="False" DropDownOpened="PidCombo_DropDownOpened"
+                      ToolTip="The character Cure-Please controls. All spells, abilities, items, and follow commands come from this client."/>
             <Button x:Name="AttachButton" Grid.Row="0" Grid.Column="2" Content="Attach" Width="80"
                     Click="AttachButton_Click"
                     ToolTip="Attach or detach the PL. Detaching stops the engine and disconnects the monitored character too."/>
@@ -63,7 +64,8 @@
             <TextBlock Grid.Row="1" Grid.Column="0" Text="Monitored:" VerticalAlignment="Center" Margin="0,4,0,0"/>
             <ComboBox x:Name="MonitoredPidBox" Grid.Row="1" Grid.Column="1" Margin="6,4,12,0"
                       IsSynchronizedWithCurrentItem="False" DropDownOpened="PidCombo_DropDownOpened"
-                      SelectionChanged="MonitoredPidBox_SelectionChanged"/>
+                      SelectionChanged="MonitoredPidBox_SelectionChanged"
+                      ToolTip="The character Cure-Please watches for party and character information. This client is not controlled."/>
             <Button x:Name="MonitoredAttachButton" Grid.Row="1" Grid.Column="2" Content="Attach" Width="80"
                     Margin="0,4,0,0" Click="MonitoredAttachButton_Click" IsEnabled="False"
                     ToolTip="Attach, switch, or detach the monitored character. Switching or detaching stops the engine until both characters are attached."/>
@@ -71,7 +73,8 @@
                        VerticalAlignment="Center" Margin="12,4,0,0" Foreground="Gray"/>
 
             <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="5" Orientation="Horizontal" Margin="0,8,0,0">
-                <Button x:Name="ImportButton" Content="Import legacy…" Width="100" Margin="0,0,8,0" Click="ImportButton_Click"/>
+                <Button x:Name="ImportButton" Content="Import legacy…" Width="100" Margin="0,0,8,0" Click="ImportButton_Click"
+                        ToolTip="Import a legacy XML file and save it immediately to the active profile, creating the default profile if needed."/>
                 <Button Content="Settings…" Width="80" Margin="0,0,8,0" Click="SettingsButton_Click"/>
             </StackPanel>
             <Button x:Name="StartButton" Grid.Row="0" Grid.RowSpan="3" Grid.Column="5"
@@ -151,7 +154,7 @@
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
                 <DataGridTextColumn Header="TP" Binding="{Binding CurrentTP}" Width="60"/>
-                <DataGridTextColumn Header="Job" Binding="{Binding JobDisplay}" Width="80"/>
+                <DataGridTextColumn Header="Job" Binding="{Binding JobDisplay}" Width="90"/>
                 <DataGridTextColumn Header="Buffs" Binding="{Binding BuffSummary}" Width="*"/>
                 <DataGridTemplateColumn Header="" Width="60">
                     <DataGridTemplateColumn.CellTemplate>

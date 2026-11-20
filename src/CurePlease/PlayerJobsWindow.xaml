@@ -61,7 +61,7 @@
 
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
                     <TextBlock Text="Job:" VerticalAlignment="Center"/>
-                    <ComboBox x:Name="SpellJobBox" Width="100" Margin="4,0,12,0" SelectionChanged="SpellFilter_Changed"/>
+                    <ComboBox x:Name="SpellJobBox" Width="100" Margin="4,0,12,0" ToolTip="Inspect another job without changing your current job, profile, or engine settings." SelectionChanged="SpellFilter_Changed"/>
                     <CheckBox x:Name="LearnableOnlyBox" Content="Learnable only" VerticalAlignment="Center"
                               Checked="SpellFilter_Changed" Unchecked="SpellFilter_Changed"
                               ToolTip="Show only spells your level qualifies for but you have not learned"/>
@@ -139,7 +139,7 @@
 
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
                     <TextBlock Text="Job:" VerticalAlignment="Center"/>
-                    <ComboBox x:Name="AbilityJobBox" Width="100" Margin="4,0,12,0" SelectionChanged="AbilityFilter_Changed"/>
+                    <ComboBox x:Name="AbilityJobBox" Width="100" Margin="4,0,12,0" ToolTip="Inspect another job without changing your current job, profile, or engine settings." SelectionChanged="AbilityFilter_Changed"/>
                     <CheckBox x:Name="AbilityLearnableOnlyBox" Content="Learnable only" VerticalAlignment="Center"
                               Checked="AbilityFilter_Changed" Unchecked="AbilityFilter_Changed"
                               ToolTip="Show only abilities your level qualifies for but you have not learned"/>

@@ -14,8 +14,13 @@ Full rewrite of legacy CurePlease 2.0.4.4 (WinForms/.NET 4.8) as a WPF app on
   Elegy, Threnody, Lullaby, Virelai, and Magic Finale.
 - Settings now has an existing-profile dropdown that reloads every editor page,
   with unsaved-change confirmation and failed-load state preservation.
+- Added concise tooltips for attachment roles, cure tiers, song timing, MP thresholds,
+  buff grids, profile actions, and character popups.
 - Party rows gain legacy-style enable checkboxes (checked by default); unchecked
   members are excluded from targeted support and AoE recovery trigger counts.
+  Job cells now show abbreviations and levels, such as BRD99/NIN49.
+  Character Info marks Honor March and Aria of Passion as Gear Required and names
+  their required Marsyas/Loughnashade instruments.
 - Cast outcomes now come exclusively from spell-correlated action packets,
   never the cast bar; missing completions return Unknown and use live
   buffs/recasts plus a short retry rather than a genuine-failure strike.

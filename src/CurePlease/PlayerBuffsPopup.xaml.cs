@@ -73,6 +73,8 @@ namespace CurePlease
                         Content = entry.Spell + (entry.Notes != null ? "  (" + entry.Notes + ")" : string.Empty),
                         IsChecked = _assignments.GetSpells(_memberName).Contains(entry.Spell),
                         Margin = new Thickness(12, 1, 0, 1),
+                        ToolTip = "Stock duration: " + entry.DefaultMinutes.ToString("0.##") + " minutes. "
+                            + "Selecting this spell replaces other selections in the " + entry.Group + " group.",
                     };
                     string spell = entry.Spell;
                     box.Checked += (s, e) => _assignments.SetSpell(_memberName, spell, true);

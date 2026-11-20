@@ -28,17 +28,24 @@
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="Tier" Binding="{Binding TierName}" IsReadOnly="True" Width="90"/>
                     <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" Width="70"/>
-                    <DataGridTextColumn Header="Min HP loss" Binding="{Binding MinimumHpLoss, UpdateSourceTrigger=PropertyChanged}" Width="*"/>
+                    <DataGridTextColumn Binding="{Binding MinimumHpLoss, UpdateSourceTrigger=PropertyChanged}" Width="*">
+                        <DataGridTextColumn.Header>
+                            <TextBlock Text="Min HP loss" ToolTip="The highest enabled tier whose threshold is met wins. Below every enabled threshold, no cure is offered."/>
+                        </DataGridTextColumn.Header>
+                    </DataGridTextColumn>
                 </DataGrid.Columns>
             </DataGrid>
             <CheckBox Content="Undercure — fall back to a lower tier when the chosen tier is unavailable"
-                      IsChecked="{Binding Settings.Cures.Undercure, UpdateSourceTrigger=PropertyChanged}" Margin="0,8,0,0"/>
+                      IsChecked="{Binding Settings.Cures.Undercure, UpdateSourceTrigger=PropertyChanged}" Margin="0,8,0,0"
+                      ToolTip="Try lower tiers when the chosen tier is unlearned, on recast, or unaffordable. Lower tiers are tried before Overcure."/>
             <CheckBox Content="Cure alliance members (single-target only — their HP is visible, their buffs/debuffs are not)"
                       IsChecked="{Binding Settings.Cures.CureAllianceEnabled, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0"/>
             <CheckBox Content="Overcure — step up a tier when the chosen tier is on recast"
-                      IsChecked="{Binding Settings.Cures.Overcure, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0"/>
+                      IsChecked="{Binding Settings.Cures.Overcure, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0"
+                      ToolTip="Try a higher tier when the chosen tier cannot currently be cast."/>
             <CheckBox Content="Overcure only for high-priority targets"
-                      IsChecked="{Binding Settings.Cures.OvercureOnHighPriority, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0"/>
+                      IsChecked="{Binding Settings.Cures.OvercureOnHighPriority, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0"
+                      ToolTip="Limit Overcure to names listed on the Priorities page."/>
             <CheckBox Content="Majesty before cures when 2+ members need one (PLD job ability — the cure lands AoE; also affects Protect/Shell)"
                       IsChecked="{Binding Settings.Cures.UseMajesty, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0"/>
             <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
@@ -71,7 +78,8 @@
                 <TextBox Text="{Binding Settings.Curaga.RequiredMembers, UpdateSourceTrigger=PropertyChanged}" Width="50"/>
             </StackPanel>
             <CheckBox Content="Use Accession + Cure I–IV instead of Curaga (SCH main or sub; one stratagem charge per party cure — Cure V/VI are incompatible)"
-                      IsChecked="{Binding Settings.Curaga.UseAccession, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0"/>
+                      IsChecked="{Binding Settings.Curaga.UseAccession, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0"
+                      ToolTip="Native Curaga is the own-party fallback when Accession cannot be used. Monitored-party mode has no native fallback."/>
             <CheckBox IsChecked="{Binding Settings.Curaga.UseAccessionOnMonitoredParty, UpdateSourceTrigger=PropertyChanged}" Margin="0,2,0,0">
                 <CheckBox.Content>
                     <TextBlock Text="Allow Accession party cures while the PL is outside the monitored party (targets an injured member; requires the option above)"
@@ -84,7 +92,11 @@
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="Tier" Binding="{Binding TierName}" IsReadOnly="True" Width="90"/>
                     <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" Width="70"/>
-                    <DataGridTextColumn Header="Min HP loss" Binding="{Binding MinimumHpLoss, UpdateSourceTrigger=PropertyChanged}" Width="*"/>
+                    <DataGridTextColumn Binding="{Binding MinimumHpLoss, UpdateSourceTrigger=PropertyChanged}" Width="*">
+                        <DataGridTextColumn.Header>
+                            <TextBlock Text="Min HP loss" ToolTip="The highest enabled tier whose threshold is met wins. Below every enabled threshold, no Curaga tier is offered."/>
+                        </DataGridTextColumn.Header>
+                    </DataGridTextColumn>
                 </DataGrid.Columns>
             </DataGrid>
 

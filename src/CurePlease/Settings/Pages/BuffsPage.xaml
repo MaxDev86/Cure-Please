@@ -36,7 +36,8 @@
             <CheckBox x:Name="EnabledOnlyBox" Content="Enabled only" VerticalAlignment="Center" Margin="14,0,0,0"
                       Checked="Filter_Changed" Unchecked="Filter_Changed"
                       ToolTip="Show only rows that are On in this profile (rows you toggle stay put until the next filter change)"/>
-            <Button Content="Clear" Width="50" Margin="14,0,0,0" Click="ClearFilter_Click" VerticalAlignment="Center"/>
+            <Button Content="Clear" Width="50" Margin="14,0,0,0" Click="ClearFilter_Click" VerticalAlignment="Center"
+                    ToolTip="Reset job, level, search, and enabled-only filters. Enabled buffs are not changed."/>
         </StackPanel>
 
         <DataGrid Grid.Row="4" ItemsSource="{Binding Rows}"
@@ -56,22 +57,36 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Min" Binding="{Binding DurationMinutes, UpdateSourceTrigger=PropertyChanged}" Width="46"/>
-                <DataGridTemplateColumn Header="Accession" Width="70">
+                <DataGridTextColumn Binding="{Binding DurationMinutes, UpdateSourceTrigger=PropertyChanged}" Width="46">
+                    <DataGridTextColumn.Header>
+                        <TextBlock Text="Min" ToolTip="Fallback duration in minutes, not remaining time. Changing spells restores the default; live presence overrides estimates."/>
+                    </DataGridTextColumn.Header>
+                </DataGridTextColumn>
+                <DataGridTemplateColumn Width="70">
+                    <DataGridTemplateColumn.Header>
+                        <TextBlock Text="Accession" ToolTip="Spread compatible self-casts to eligible party members."/>
+                    </DataGridTemplateColumn.Header>
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <CheckBox IsChecked="{Binding UseAccession, UpdateSourceTrigger=PropertyChanged}"
                                       IsEnabled="{Binding AccessionCompatible}"
-                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      ToolTip="Use one stratagem charge to spread this self-cast to eligible party members. Disabled for incompatible spells."
+                                      ToolTipService.ShowOnDisabled="True"/>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTemplateColumn Header="Perpetuance" Width="80">
+                <DataGridTemplateColumn Width="80">
+                    <DataGridTemplateColumn.Header>
+                        <TextBlock Text="Perpetuance" ToolTip="Extend compatible enhancing spells; SCH main only."/>
+                    </DataGridTemplateColumn.Header>
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <CheckBox IsChecked="{Binding UsePerpetuance, UpdateSourceTrigger=PropertyChanged}"
                                       IsEnabled="{Binding PerpetuanceCompatible}"
-                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      ToolTip="Use one stratagem charge to extend this compatible enhancing spell. Uses the Scholar-page multiplier. Disabled for incompatible spells."
+                                      ToolTipService.ShowOnDisabled="True"/>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>

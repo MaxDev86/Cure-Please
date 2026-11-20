@@ -32,7 +32,8 @@
         </StackPanel>
         <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
             <TextBlock Text="Target MP at or below:" VerticalAlignment="Center" Width="170"/>
-            <TextBox Text="{Binding DevotionMpBelow, UpdateSourceTrigger=PropertyChanged}" Width="70"/>
+            <TextBox Text="{Binding DevotionMpBelow, UpdateSourceTrigger=PropertyChanged}" Width="70"
+                     ToolTip="Absolute MP, not a percentage. The target must also be at or below 30% MP; the PL must be above 80% HP and within 10 yalms."/>
         </StackPanel>
         <CheckBox Content="Only while engaged (monitored character when attached, else yourself)"
                   IsChecked="{Binding DevotionOnlyWhenEngaged, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0"/>

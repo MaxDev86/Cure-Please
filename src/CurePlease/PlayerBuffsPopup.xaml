@@ -11,7 +11,8 @@
         </Grid.RowDefinitions>
         <TextBlock x:Name="HeaderText" FontWeight="Bold" FontSize="13"/>
         <TextBlock Grid.Row="1" Text="Session-only — assignments are cleared on attach and never saved to the profile."
-                   TextWrapping="Wrap" Foreground="Gray" Margin="0,2,0,6"/>
+                   TextWrapping="Wrap" Foreground="Gray" Margin="0,2,0,6"
+                   ToolTip="Targets must be enabled in the party grid, within 21 yalms, and in the same zone. Observable targets are recast when missing; others use stock-duration timers."/>
         <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
             <ItemsControl x:Name="BuffList"/>
         </ScrollViewer>

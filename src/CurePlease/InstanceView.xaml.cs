@@ -938,7 +938,10 @@ namespace CurePlease
                 MPP = m.CurrentMPP;
                 HpText = m.CurrentHP.ToString("N0") + "  ·  " + m.CurrentHPP + "%";
                 MpText = m.CurrentMP.ToString("N0") + "  ·  " + m.CurrentMPP + "%";
-                JobDisplay = m.MainJob + "/" + m.SubJob;
+                string mainJob = ProfileService.JobAbbreviation(m.MainJob) ?? m.MainJob.ToString();
+                string subJob = ProfileService.JobAbbreviation(m.SubJob);
+                JobDisplay = mainJob + m.MainJobLevel
+                    + (subJob != null ? "/" + subJob + m.SubJobLevel : string.Empty);
                 BuffSummary = IsSelf
                     ? "via Settings → Buff Upkeep"
                     : string.Join(", ", assignments.GetSpells(m.Name));

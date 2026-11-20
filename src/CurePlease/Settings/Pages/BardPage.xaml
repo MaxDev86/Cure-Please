@@ -84,14 +84,16 @@
                           IsChecked="{Binding Settings.UseMarcato, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center"/>
                 <ComboBox SelectedItem="{Binding Settings.MarcatoSong, UpdateSourceTrigger=PropertyChanged}"
                           ItemsSource="{Binding Source={x:Static local:BardEditModel.KnownSongs}}" IsEditable="True"
-                          Width="180" Margin="8,0,0,0"/>
+                          Width="180" Margin="8,0,0,0"
+                          ToolTip="The song Marcato enhances during a refresh pass. Normally choose a song already in the party rotation."/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
                 <CheckBox Content="Clarion Call for the slot overflow, song:"
                           IsChecked="{Binding Settings.UseClarionCall, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center"/>
                 <ComboBox SelectedItem="{Binding Settings.ClarionSong, UpdateSourceTrigger=PropertyChanged}"
                           ItemsSource="{Binding Source={x:Static local:BardEditModel.KnownSongs}}" IsEditable="True"
-                          Width="180" Margin="8,0,0,0"/>
+                          Width="180" Margin="8,0,0,0"
+                          ToolTip="The song for Clarion Call's extra slot. Clarion Call is used only when the rotation needs it; this song follows the dummies."/>
             </StackPanel>
 
             <!-- Pianissimo -->
@@ -99,7 +101,8 @@
             <TextBlock Text="Single-target top-ups on named party members (needs buff visibility: monitored character or the addon)."
                        TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,6"/>
             <DataGrid ItemsSource="{Binding PianissimoTargets}" AutoGenerateColumns="False"
-                      CanUserAddRows="True" CanUserDeleteRows="True" HeadersVisibility="Column" Height="90">
+                      CanUserAddRows="True" CanUserDeleteRows="True" HeadersVisibility="Column" Height="90"
+                      ToolTip="Use exact character names. Targets must be enabled in the party grid, in range, and visible through the monitored attachment or addon.">
                 <DataGrid.Columns>
                     <DataGridComboBoxColumn Header="Song" Width="*"
                         SelectedItemBinding="{Binding Song, UpdateSourceTrigger=PropertyChanged}"
@@ -130,15 +133,17 @@
             <TextBlock Text="Timing" FontWeight="Bold" Margin="0,14,0,4"/>
             <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                 <TextBlock Text="Grace period (s):" VerticalAlignment="Center" Width="170"/>
-                <TextBox Text="{Binding GracePeriodText, UpdateSourceTrigger=PropertyChanged}" Width="70"/>
+                <TextBox Text="{Binding GracePeriodText, UpdateSourceTrigger=PropertyChanged}" Width="70"
+                         ToolTip="Delay after a completed song before any next action. Increase this if the following song is rejected; completion uses action packets, not the cast bar."/>
                 <TextBlock Text="Delay after a completed song (up to two decimal places)."
                            VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray"/>
             </StackPanel>
             <TextBlock Text="{Binding GracePeriodError}" Foreground="Red" TextWrapping="Wrap"/>
             <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                 <TextBlock Text="Song duration (s):" VerticalAlignment="Center" Width="170"/>
-                <TextBox Text="{Binding Settings.BaseDurationSeconds, UpdateSourceTrigger=PropertyChanged}" Width="70"/>
-                <TextBlock Text="Fallback before Troubadour/Soul Voice doubling; the PL's packet-reported expiry is used when available."
+                <TextBox Text="{Binding Settings.BaseDurationSeconds, UpdateSourceTrigger=PropertyChanged}" Width="70"
+                         ToolTip="Fallback for recipients without exact timers. The PL uses memory timers first, then addon packets; Troubadour and Soul Voice modifiers are applied to estimates."/>
+                <TextBlock Text="Fallback before Troubadour/Soul Voice doubling; exact PL expiry is used when available."
                            VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray" TextWrapping="Wrap"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" Margin="0,4,0,0">

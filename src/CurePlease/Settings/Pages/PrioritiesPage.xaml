@@ -12,16 +12,19 @@
             <TextBlock Text="Member priority" FontWeight="Bold" Margin="0,8,0,0"/>
             <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                 <TextBlock Text="Monitored character multiplier:" VerticalAlignment="Center" Width="220"/>
-                <TextBox Text="{Binding Settings.MonitoredWeight, UpdateSourceTrigger=PropertyChanged}" Width="50"/>
+                <TextBox Text="{Binding Settings.MonitoredWeight, UpdateSourceTrigger=PropertyChanged}" Width="50"
+                         ToolTip="Score multiplier for monitored-character cures and debuff removals. When both apply, monitored values replace high-priority values; they do not stack."/>
             </StackPanel>
             <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
                 <TextBlock Text="High-priority member multiplier:" VerticalAlignment="Center" Width="220"/>
-                <TextBox Text="{Binding Settings.HighPriorityWeight, UpdateSourceTrigger=PropertyChanged}" Width="50"/>
+                <TextBox Text="{Binding Settings.HighPriorityWeight, UpdateSourceTrigger=PropertyChanged}" Width="50"
+                         ToolTip="Cure-score multiplier for the names below. The monitored character uses its own multiplier instead."/>
             </StackPanel>
-            <TextBlock Text="High-priority members, one name per line. They become cure candidates at the higher threshold on the Healing page and their cures/debuff removals are multiplied by the weight above."
+            <TextBlock Text="High-priority members, one name per line. They become cure candidates at the higher threshold on the Healing page and their cures are multiplied by the weight above."
                        TextWrapping="Wrap" Foreground="Gray" Margin="0,10,0,2"/>
             <TextBox Text="{Binding HighPriorityNames}" AcceptsReturn="True" MinHeight="66"
-                     VerticalScrollBarVisibility="Auto"/>
+                     VerticalScrollBarVisibility="Auto"
+                     ToolTip="Case-insensitive character names, one per line. These members use the high-priority cure threshold and cure-score multiplier."/>
 
             <!-- Action scores -->
             <TextBlock Text="Action scores" FontWeight="Bold" Margin="0,16,0,0"/>

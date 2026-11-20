@@ -86,6 +86,8 @@ namespace CurePlease.Core
         public static readonly IReadOnlyDictionary<int, string> GearGatedSpells =
             new Dictionary<int, string>
             {
+                { 417, "Marsyas (instrument)" },      // Honor March
+                { 418, "Loughnashade (instrument)" }, // Aria of Passion
                 { 503, "Twilight Cloak or Crepuscular Cloak (body)" }, // Impact
             };
 

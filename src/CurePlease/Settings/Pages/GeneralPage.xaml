@@ -21,10 +21,12 @@
 
         <TextBlock Text="Addon" FontWeight="Bold" Margin="0,0,0,6"/>
         <CheckBox Content="Use the CurePlease addon (party buffs + cast events over UDP)"
-                  IsChecked="{Binding Addon.Enabled, UpdateSourceTrigger=PropertyChanged}"/>
+                  IsChecked="{Binding Addon.Enabled, UpdateSourceTrigger=PropertyChanged}"
+                  ToolTip="Use addon reports for party buffs/debuffs and fallback buff timers. Local memory timers take precedence."/>
         <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
             <TextBlock Text="UDP port:" VerticalAlignment="Center" Width="130"/>
-            <TextBox Text="{Binding Addon.Port, UpdateSourceTrigger=PropertyChanged}" Width="70"/>
+            <TextBox Text="{Binding Addon.Port, UpdateSourceTrigger=PropertyChanged}" Width="70"
+                     ToolTip="All tabs share the first tab's listener port. Restart Cure-Please after changing this and use the same port in the addon."/>
             <TextBlock Text="19771 default; legacy addon used 19769."
                        VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray"/>
         </StackPanel>
@@ -46,7 +48,8 @@
         </StackPanel>
         <CheckBox Content="Warn the target with a /tell when they are too far away or we appear stuck"
                   IsChecked="{Binding General.FollowWarning, UpdateSourceTrigger=PropertyChanged}"
-                  Margin="0,4,0,0"/>
+                  Margin="0,4,0,0"
+                  ToolTip="Send the target a /tell when they are over 40 yalms away or the PL appears stuck. Also writes a log warning."/>
         <CheckBox Content="Use the game's native /follow instead of memory-driven movement"
                   IsChecked="{Binding General.FollowUseNative, UpdateSourceTrigger=PropertyChanged}"
                   Margin="0,4,0,0"

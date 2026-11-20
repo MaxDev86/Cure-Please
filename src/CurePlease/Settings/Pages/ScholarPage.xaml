@@ -29,7 +29,8 @@
         <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
             <CheckBox Content="Use Sublimation, consume at MP deficit:"
                       IsChecked="{Binding Sublimation, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center"/>
-            <TextBox Text="{Binding SublimationMpDeficit, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="8,0,0,0"/>
+            <TextBox Text="{Binding SublimationMpDeficit, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="8,0,0,0"
+                     ToolTip="Absolute missing MP (Max MP minus current MP). Consume only when Sublimation is fully charged and this deficit is reached."/>
         </StackPanel>
 
         <!-- Rapture -->
@@ -48,7 +49,8 @@
         </StackPanel>
         <StackPanel Orientation="Horizontal" Margin="16,2,0,0">
             <TextBlock Text="Reserve stratagem charges:" VerticalAlignment="Center"/>
-            <TextBox Text="{Binding RaptureReserveCharges, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="8,0,0,0"/>
+            <TextBox Text="{Binding RaptureReserveCharges, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="8,0,0,0"
+                     ToolTip="Charges to keep unused. Set 0 to allow the last charge. Full-charge harvesting also respects this reserve."/>
         </StackPanel>
         <CheckBox Content="At full charges, pre-charge Rapture instead of wasting recharge"
                   IsChecked="{Binding RaptureHarvestAtFullCharge, UpdateSourceTrigger=PropertyChanged}" Margin="16,2,0,0"/>
